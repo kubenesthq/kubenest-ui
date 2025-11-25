@@ -23,7 +23,7 @@ interface ToastNotification {
 
 export function EventToast() {
   const [toasts, setToasts] = React.useState<ToastNotification[]>([]);
-  const { lastEvent } = useSSE('/api/events');
+  const { lastEvent } = useSSE(); // Use hook without filters to get all events
 
   // Process SSE events and create toast notifications
   React.useEffect(() => {

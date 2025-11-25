@@ -1,25 +1,19 @@
 'use client';
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function ClustersPage() {
+  const router = useRouter();
+
+  useEffect(() => {
+    // Redirect to dashboard as clusters view is now integrated there
+    router.replace('/dashboard');
+  }, [router]);
+
   return (
-    <div className="container mx-auto py-8">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold">Clusters</h1>
-        <Button>Add Cluster</Button>
-      </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Your Clusters</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground">
-            No clusters yet. Add your first cluster to get started.
-          </p>
-        </CardContent>
-      </Card>
+    <div className="flex min-h-screen items-center justify-center">
+      <div className="animate-pulse">Redirecting...</div>
     </div>
   );
 }
