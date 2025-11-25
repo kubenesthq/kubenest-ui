@@ -18,9 +18,9 @@ The Kubenest UI is the web interface for the Kubenest platform. Users interact w
 ## Technology Stack (Recommended)
 
 ```yaml
-Framework: React 18 + TypeScript
-Build Tool: Vite
-Routing: React Router v6
+Framework: Next.js 14+ (App Router) + TypeScript
+Routing: File-based routing (built-in)
+Rendering: Server Components + Client Components
 State Management: Zustand (simpler than Redux for MVP)
 API Client: TanStack Query (React Query)
 UI Components: shadcn/ui (Tailwind + Radix UI)
@@ -30,11 +30,13 @@ Styling: Tailwind CSS
 Icons: Lucide React
 ```
 
-**Why these choices for MVP?**
-- Fast development
+**Why Next.js for MVP?**
+- Fast development with App Router
+- Server-side rendering for better performance
+- Built-in routing and optimization
 - Modern, type-safe
 - Minimal boilerplate
-- Great DX
+- Great DX with TypeScript
 
 ## MVP User Journey
 
@@ -74,11 +76,33 @@ Icons: Lucide React
 kubenest-ui/
 ├── public/
 ├── src/
-│   ├── main.tsx             # App entry point
-│   ├── App.tsx              # Main app component
-│   ├── routes.tsx           # Route definitions
+│   ├── app/                 # Next.js App Router
+│   │   ├── layout.tsx       # Root layout
+│   │   ├── page.tsx         # Dashboard (/)
+│   │   ├── login/
+│   │   │   └── page.tsx     # Login page
+│   │   ├── register/
+│   │   │   └── page.tsx     # Register page
+│   │   ├── clusters/
+│   │   │   ├── page.tsx     # Cluster list
+│   │   │   ├── new/
+│   │   │   │   └── page.tsx # New cluster
+│   │   │   └── [id]/
+│   │   │       ├── page.tsx # Cluster detail
+│   │   │       └── projects/
+│   │   │           └── new/
+│   │   │               └── page.tsx # New project
+│   │   ├── projects/
+│   │   │   └── [id]/
+│   │   │       ├── page.tsx # Project detail
+│   │   │       └── workloads/
+│   │   │           └── new/
+│   │   │               └── page.tsx # New workload
+│   │   └── workloads/
+│   │       └── [id]/
+│   │           └── page.tsx # Workload detail
 │   ├── api/                 # API client
-│   │   ├── client.ts        # Axios/Fetch config
+│   │   ├── client.ts        # Fetch config
 │   │   ├── auth.ts          # Auth endpoints
 │   │   ├── clusters.ts      # Cluster endpoints
 │   │   ├── projects.ts      # Project endpoints
@@ -88,22 +112,6 @@ kubenest-ui/
 │   │   ├── Layout.tsx
 │   │   ├── Navbar.tsx
 │   │   └── StatusBadge.tsx
-│   ├── pages/               # Page components
-│   │   ├── auth/
-│   │   │   ├── LoginPage.tsx
-│   │   │   └── RegisterPage.tsx
-│   │   ├── dashboard/
-│   │   │   └── DashboardPage.tsx
-│   │   ├── clusters/
-│   │   │   ├── ClusterListPage.tsx
-│   │   │   ├── ClusterDetailPage.tsx
-│   │   │   └── NewClusterPage.tsx
-│   │   ├── projects/
-│   │   │   ├── ProjectDetailPage.tsx
-│   │   │   └── NewProjectPage.tsx
-│   │   └── workloads/
-│   │       ├── WorkloadDetailPage.tsx
-│   │       └── NewWorkloadPage.tsx
 │   ├── hooks/               # Custom hooks
 │   │   ├── useAuth.ts
 │   │   ├── useClusters.ts
@@ -118,7 +126,8 @@ kubenest-ui/
 │       └── utils.ts
 ├── .env.example
 ├── .env.development
-├── vite.config.ts
+├── .env.production
+├── next.config.js
 ├── tailwind.config.js
 ├── tsconfig.json
 ├── package.json
@@ -129,17 +138,16 @@ kubenest-ui/
 ## Quick Start
 
 ```bash
-# Create project
-npm create vite@latest kubenest-ui -- --template react-ts
+# Create Next.js project
+npx create-next-app@latest kubenest-ui --typescript --tailwind --app --no-src-dir
 cd kubenest-ui
 
 # Install dependencies
-npm install react-router-dom zustand @tanstack/react-query
-npm install -D tailwindcss postcss autoprefixer
+npm install zustand @tanstack/react-query
 npm install lucide-react
 
 # Setup shadcn/ui
-npx shadcn-ui@latest init
+npx shadcn@latest init
 
 # Start dev server
 npm run dev
@@ -148,15 +156,15 @@ npm run dev
 ## Environment Configuration
 
 ```bash
-# .env.development
-VITE_API_URL=http://localhost:8000
-VITE_SSE_URL=http://localhost:8000/api/v1/stream
+# .env.local (for development)
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_SSE_URL=http://localhost:8000/api/v1/stream
 ```
 
 ```bash
 # .env.production
-VITE_API_URL=https://api.kubenest.io
-VITE_SSE_URL=https://api.kubenest.io/api/v1/stream
+NEXT_PUBLIC_API_URL=https://api.kubenest.io
+NEXT_PUBLIC_SSE_URL=https://api.kubenest.io/api/v1/stream
 ```
 
 ## API Integration
@@ -165,59 +173,87 @@ VITE_SSE_URL=https://api.kubenest.io/api/v1/stream
 
 ```typescript
 // src/api/client.ts
-import axios from 'axios';
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-const API_URL = import.meta.env.VITE_API_URL;
-
-export const apiClient = axios.create({
-  baseURL: `${API_URL}/api/v1`,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// Add auth token to requests
-apiClient.interceptors.request.use((config) => {
+async function fetchWithAuth(url: string, options: RequestInit = {}) {
   const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
 
-// Handle auth errors
-apiClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
+  const response = await fetch(`${API_URL}/api/v1${url}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: `Bearer ${token}` }),
+      ...options.headers,
+    },
+  });
+
+  // Handle auth errors
+  if (response.status === 401) {
+    localStorage.removeItem('token');
+    window.location.href = '/login';
+    throw new Error('Unauthorized');
   }
-);
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export const apiClient = {
+  get: (url: string) => fetchWithAuth(url),
+  post: (url: string, data: any) =>
+    fetchWithAuth(url, { method: 'POST', body: JSON.stringify(data) }),
+  patch: (url: string, data: any) =>
+    fetchWithAuth(url, { method: 'PATCH', body: JSON.stringify(data) }),
+  delete: (url: string) =>
+    fetchWithAuth(url, { method: 'DELETE' }),
+};
 ```
 
 ### React Query Setup
 
 ```typescript
-// src/main.tsx
+// src/app/providers.tsx
+'use client';
+
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useState } from 'react';
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 30000, // 30 seconds
-      retry: 1,
+export function Providers({ children }: { children: React.ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 30000, // 30 seconds
+        retry: 1,
+      },
     },
-  },
-});
+  }));
 
-root.render(
-  <QueryClientProvider client={queryClient}>
-    <App />
-  </QueryClientProvider>
-);
+  return (
+    <QueryClientProvider client={queryClient}>
+      {children}
+    </QueryClientProvider>
+  );
+}
+
+// src/app/layout.tsx
+import { Providers } from './providers';
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en">
+      <body>
+        <Providers>{children}</Providers>
+      </body>
+    </html>
+  );
+}
 ```
 
 ### Example: Workload List
@@ -244,11 +280,13 @@ export async function getWorkloads(projectId: string): Promise<Workload[]> {
   return data;
 }
 
-// src/pages/workloads/WorkloadListPage.tsx
-import { useWorkloads } from '../../hooks/useWorkloads';
+// src/app/projects/[id]/page.tsx
+'use client';
 
-export function WorkloadListPage({ projectId }: { projectId: string }) {
-  const { data: workloads, isLoading, error } = useWorkloads(projectId);
+import { useWorkloads } from '@/hooks/useWorkloads';
+
+export default function ProjectPage({ params }: { params: { id: string } }) {
+  const { data: workloads, isLoading, error } = useWorkloads(params.id);
 
   if (isLoading) return <div>Loading...</div>;
   if (error) return <div>Error loading workloads</div>;
@@ -268,13 +306,15 @@ export function WorkloadListPage({ projectId }: { projectId: string }) {
 
 ```typescript
 // src/hooks/useSSE.ts
+'use client';
+
 import { useEffect, useState } from 'react';
 
 export function useWorkloadStatus(workloadId: string) {
   const [status, setStatus] = useState<string>('unknown');
 
   useEffect(() => {
-    const SSE_URL = import.meta.env.VITE_SSE_URL;
+    const SSE_URL = process.env.NEXT_PUBLIC_SSE_URL;
     const eventSource = new EventSource(
       `${SSE_URL}/workloads/${workloadId}`,
       { withCredentials: true }
@@ -299,6 +339,8 @@ export function useWorkloadStatus(workloadId: string) {
 }
 
 // Usage in component
+'use client';
+
 function WorkloadStatus({ workloadId }: { workloadId: string }) {
   const status = useWorkloadStatus(workloadId);
 
@@ -340,11 +382,14 @@ export function StatusBadge({ status }: { status: Status }) {
 ### 2. Deploy Workload Form
 
 ```tsx
-// src/pages/workloads/NewWorkloadPage.tsx
+// src/app/projects/[id]/workloads/new/page.tsx
+'use client';
+
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 
 const workloadSchema = z.object({
   name: z.string().regex(/^[a-z0-9-]+$/),
@@ -355,16 +400,17 @@ const workloadSchema = z.object({
 
 type WorkloadForm = z.infer<typeof workloadSchema>;
 
-export function NewWorkloadPage({ projectId }: { projectId: string }) {
+export default function NewWorkloadPage({ params }: { params: { id: string } }) {
+  const router = useRouter();
   const { register, handleSubmit, formState: { errors } } = useForm<WorkloadForm>({
     resolver: zodResolver(workloadSchema),
     defaultValues: { replicas: 1 },
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: WorkloadForm) => createWorkload(projectId, data),
+    mutationFn: (data: WorkloadForm) => createWorkload(params.id, data),
     onSuccess: (workload) => {
-      navigate(`/workloads/${workload.id}`);
+      router.push(`/workloads/${workload.id}`);
     },
   });
 
@@ -400,14 +446,15 @@ export function NewWorkloadPage({ projectId }: { projectId: string }) {
 ## MVP Implementation Checklist
 
 ### Week 1: Foundation & Auth
-- [ ] Setup Vite + React + TypeScript
-- [ ] Setup Tailwind CSS
+- [ ] Setup Next.js 14+ with App Router + TypeScript
+- [ ] Setup Tailwind CSS (included in setup)
 - [ ] Install shadcn/ui components
-- [ ] Create basic layout (Navbar, Container)
-- [ ] Build login page
-- [ ] Build register page
+- [ ] Create root layout with Navbar
+- [ ] Build login page (app/login/page.tsx)
+- [ ] Build register page (app/register/page.tsx)
 - [ ] Setup auth store (Zustand)
-- [ ] Setup API client with auth interceptors
+- [ ] Setup API client with auth
+- [ ] Setup React Query provider
 
 ### Week 2: Core Features
 - [ ] Dashboard page (cluster list)
@@ -494,9 +541,9 @@ server {
   root /usr/share/nginx/html;
   index index.html;
 
-  # React Router - serve index.html for all routes
+  # Next.js static export - serve files
   location / {
-    try_files $uri $uri/ /index.html;
+    try_files $uri $uri/ $uri.html /index.html;
   }
 
   # Cache static assets
@@ -511,12 +558,13 @@ server {
 
 ```bash
 # Build
-docker build -t kubenest-ui .
+docker build -t kubenest-ui \
+  --build-arg NEXT_PUBLIC_API_URL=https://api.kubenest.io \
+  --build-arg NEXT_PUBLIC_SSE_URL=https://api.kubenest.io/api/v1/stream \
+  .
 
 # Run
-docker run -p 3000:80 \
-  -e VITE_API_URL=https://api.kubenest.io \
-  kubenest-ui
+docker run -p 3000:80 kubenest-ui
 ```
 
 ## Success Criteria
