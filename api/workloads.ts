@@ -16,6 +16,13 @@ export async function createWorkload(
   return apiClient.post<{ data: Workload }>(`/projects/${projectId}/workloads`, data);
 }
 
+export async function scaleWorkload(
+  id: string,
+  replicas: number
+): Promise<{ data: Workload }> {
+  return apiClient.patch<{ data: Workload }>(`/workloads/${id}/scale`, { replicas });
+}
+
 export async function deleteWorkload(id: string): Promise<void> {
   return apiClient.delete<void>(`/workloads/${id}`);
 }
