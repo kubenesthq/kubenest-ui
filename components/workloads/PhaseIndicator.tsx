@@ -29,7 +29,15 @@ export function PhaseIndicator({ currentPhase, className }: PhaseIndicatorProps)
   const isDegraded = currentPhase === 'Degraded';
 
   return (
-    <div className={cn('flex items-center gap-2', className)}>
+    <div
+      className={cn('flex items-center gap-2', className)}
+      role="progressbar"
+      aria-label="Deployment progress"
+      aria-valuenow={currentIndex}
+      aria-valuemin={0}
+      aria-valuemax={phases.length - 1}
+      aria-valuetext={`Current phase: ${currentPhase}`}
+    >
       {phases.map((phase, index) => {
         const isCompleted = index < currentIndex || (isDegraded && index === currentIndex);
         const isCurrent = index === currentIndex && !isFailed && !isDegraded;

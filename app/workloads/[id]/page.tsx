@@ -274,6 +274,7 @@ export default function WorkloadDetailPage() {
                   size="icon"
                   onClick={decrementReplicas}
                   disabled={isScaling || desiredReplicas <= 0}
+                  aria-label="Decrease replica count"
                 >
                   <Minus className="h-4 w-4" />
                 </Button>
@@ -285,12 +286,14 @@ export default function WorkloadDetailPage() {
                   onChange={(e) => setDesiredReplicas(Math.max(0, parseInt(e.target.value) || 0))}
                   disabled={isScaling}
                   className="w-24 text-center text-lg font-semibold"
+                  aria-label="Number of replicas"
                 />
                 <Button
                   variant="outline"
                   size="icon"
                   onClick={incrementReplicas}
                   disabled={isScaling || desiredReplicas >= 100}
+                  aria-label="Increase replica count"
                 >
                   <Plus className="h-4 w-4" />
                 </Button>

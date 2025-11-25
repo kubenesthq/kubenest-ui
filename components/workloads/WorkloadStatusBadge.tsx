@@ -19,7 +19,12 @@ export function WorkloadStatusBadge({ phase }: WorkloadStatusBadgeProps) {
   const config = variants[phase] || variants.Pending;
 
   return (
-    <Badge variant={config.variant} className="capitalize">
+    <Badge
+      variant={config.variant}
+      className="capitalize"
+      role="status"
+      aria-label={`Workload status: ${config.label}`}
+    >
       {config.label}
     </Badge>
   );
