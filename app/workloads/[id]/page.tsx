@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import Link from 'next/link';
 import { Minus, Plus } from 'lucide-react';
@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import { useWorkload, useScaleWorkload, useDeleteWorkload } from '@/hooks/useWorkloads';
 import { getProject } from '@/api/projects';
+import { useSSE, WorkloadStatusEvent } from '@/hooks/useSSE';
 
 export default function WorkloadDetailPage() {
   const router = useRouter();
@@ -30,9 +31,17 @@ export default function WorkloadDetailPage() {
   const [desiredReplicas, setDesiredReplicas] = useState<number>(1);
   const [isScaling, setIsScaling] = useState(false);
 
+  const queryClient = useQueryClient();
+
   // Fetch workload data
   const { data: workloadData, isLoading: workloadLoading } = useWorkload(workloadId);
   const workload = workloadData?.data;
+
+  // Real-time SSE connection for this workload
+  const { lastEvent, connected, reconnecting } = useSSE({
+    workload_id: workloadId,
+    resource_type: 'workload',
+  });
 
   // Set initial replica count when workload loads
   useState(() => {
@@ -40,6 +49,27 @@ export default function WorkloadDetailPage() {
       setDesiredReplicas(workload.replicas);
     }
   });
+
+  // Handle real-time workload status updates
+  useEffect(() => {
+    if (lastEvent && lastEvent.event_type === 'workload_status_update') {
+      const statusEvent = lastEvent as WorkloadStatusEvent;
+
+      // Only process events for this specific workload
+      if (statusEvent.workload_id === workloadId) {
+        // Invalidate the workload query to refetch fresh data
+        queryClient.invalidateQueries({ queryKey: ['workload', workloadId] });
+
+        // Log status change for debugging
+        console.log(`[SSE] Workload ${workloadId} status updated:`, {
+          status: statusEvent.status,
+          message: statusEvent.message,
+          replicas: statusEvent.replicas,
+          available_replicas: statusEvent.available_replicas,
+        });
+      }
+    }
+  }, [lastEvent, workloadId, queryClient]);
 
   // Fetch parent project data
   const { data: projectData } = useQuery({
@@ -126,6 +156,27 @@ export default function WorkloadDetailPage() {
           <div className="flex items-center gap-3">
             <h1 className="text-3xl font-bold">{workload.name}</h1>
             <WorkloadStatusBadge phase={workload.phase} />
+            {/* Real-time connection indicator */}
+            <div className="flex items-center gap-2 text-xs">
+              {connected && (
+                <div className="flex items-center gap-1.5 px-2 py-1 bg-green-500/10 text-green-600 dark:text-green-400 rounded-md border border-green-500/20">
+                  <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                  <span className="font-medium">Live</span>
+                </div>
+              )}
+              {reconnecting && (
+                <div className="flex items-center gap-1.5 px-2 py-1 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 rounded-md border border-yellow-500/20">
+                  <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse" />
+                  <span className="font-medium">Reconnecting...</span>
+                </div>
+              )}
+              {!connected && !reconnecting && (
+                <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-500/10 text-gray-600 dark:text-gray-400 rounded-md border border-gray-500/20">
+                  <div className="w-1.5 h-1.5 rounded-full bg-gray-500" />
+                  <span className="font-medium">Offline</span>
+                </div>
+              )}
+            </div>
           </div>
           <p className="text-muted-foreground mt-1">
             Created {format(new Date(workload.created_at), 'MMMM d, yyyy')}
