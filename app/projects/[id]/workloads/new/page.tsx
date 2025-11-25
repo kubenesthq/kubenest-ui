@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useCreateWorkload } from '@/hooks/useWorkloads';
+import { WORKLOAD_LIMITS } from '@/lib/constants/workloads';
+import type { CreateWorkloadRequest } from '@/types/api';
 
 // Validation schema matching the requirements
 const workloadSchema = z.object({
@@ -20,13 +22,13 @@ const workloadSchema = z.object({
   replicas: z
     .number()
     .int('Replicas must be an integer')
-    .min(0, 'Replicas must be at least 0')
-    .max(10, 'Replicas cannot exceed 10'),
+    .min(WORKLOAD_LIMITS.MIN_REPLICAS, `Replicas must be at least ${WORKLOAD_LIMITS.MIN_REPLICAS}`)
+    .max(WORKLOAD_LIMITS.MAX_REPLICAS, `Replicas cannot exceed ${WORKLOAD_LIMITS.MAX_REPLICAS}`),
   port: z
     .number()
     .int('Port must be an integer')
-    .min(1, 'Port must be at least 1')
-    .max(65535, 'Port cannot exceed 65535')
+    .min(WORKLOAD_LIMITS.MIN_PORT, `Port must be at least ${WORKLOAD_LIMITS.MIN_PORT}`)
+    .max(WORKLOAD_LIMITS.MAX_PORT, `Port cannot exceed ${WORKLOAD_LIMITS.MAX_PORT}`)
     .optional()
     .nullable(),
 });
@@ -58,10 +60,8 @@ export default function NewWorkloadPage() {
   const onSubmit = async (data: WorkloadFormData) => {
     try {
       // Prepare the request payload
-      const payload: any = {
+      const payload: CreateWorkloadRequest = {
         name: data.name,
-        project_id: projectId,
-        build_mode: 'image' as const,
         image: data.image,
         replicas: data.replicas,
       };
@@ -75,9 +75,12 @@ export default function NewWorkloadPage() {
 
       // Navigate to the workload detail page on success
       router.push(`/workloads/${response.data.id}`);
-    } catch (error: any) {
+    } catch (error) {
       // Handle API errors
-      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to deploy workload';
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Failed to deploy workload';
       setError('root', {
         type: 'manual',
         message: errorMessage,
@@ -150,8 +153,8 @@ export default function NewWorkloadPage() {
                 <Input
                   id="replicas"
                   type="number"
-                  min={0}
-                  max={10}
+                  min={WORKLOAD_LIMITS.MIN_REPLICAS}
+                  max={WORKLOAD_LIMITS.MAX_REPLICAS}
                   {...register('replicas', { valueAsNumber: true })}
                   disabled={isSubmitting}
                 />
@@ -159,7 +162,7 @@ export default function NewWorkloadPage() {
                   <p className="text-sm text-destructive">{errors.replicas.message}</p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  Number of pod replicas (0-10, default: 1)
+                  Number of pod replicas ({WORKLOAD_LIMITS.MIN_REPLICAS}-{WORKLOAD_LIMITS.MAX_REPLICAS}, default: {WORKLOAD_LIMITS.DEFAULT_REPLICAS})
                 </p>
               </div>
 
@@ -169,8 +172,8 @@ export default function NewWorkloadPage() {
                 <Input
                   id="port"
                   type="number"
-                  min={1}
-                  max={65535}
+                  min={WORKLOAD_LIMITS.MIN_PORT}
+                  max={WORKLOAD_LIMITS.MAX_PORT}
                   placeholder="8080"
                   {...register('port', {
                     valueAsNumber: true,
@@ -182,7 +185,7 @@ export default function NewWorkloadPage() {
                   <p className="text-sm text-destructive">{errors.port.message}</p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  Container port to expose (1-65535)
+                  Container port to expose ({WORKLOAD_LIMITS.MIN_PORT}-{WORKLOAD_LIMITS.MAX_PORT})
                 </p>
               </div>
 

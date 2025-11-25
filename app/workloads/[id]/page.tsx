@@ -22,6 +22,7 @@ import {
 import { useWorkload, useScaleWorkload, useDeleteWorkload } from '@/hooks/useWorkloads';
 import { getProject } from '@/api/projects';
 import { useSSE, WorkloadStatusEvent } from '@/hooks/useSSE';
+import { WORKLOAD_LIMITS } from '@/lib/constants/workloads';
 
 export default function WorkloadDetailPage() {
   const router = useRouter();
@@ -44,11 +45,11 @@ export default function WorkloadDetailPage() {
   });
 
   // Set initial replica count when workload loads
-  useState(() => {
+  useEffect(() => {
     if (workload) {
       setDesiredReplicas(workload.replicas);
     }
-  });
+  }, [workload]);
 
   // Handle real-time workload status updates
   useEffect(() => {
@@ -117,11 +118,11 @@ export default function WorkloadDetailPage() {
   };
 
   const incrementReplicas = () => {
-    setDesiredReplicas((prev) => Math.min(prev + 1, 100));
+    setDesiredReplicas((prev) => Math.min(prev + 1, WORKLOAD_LIMITS.MAX_REPLICAS));
   };
 
   const decrementReplicas = () => {
-    setDesiredReplicas((prev) => Math.max(prev - 1, 0));
+    setDesiredReplicas((prev) => Math.max(prev - 1, WORKLOAD_LIMITS.MIN_REPLICAS));
   };
 
   if (workloadLoading) {
@@ -273,17 +274,17 @@ export default function WorkloadDetailPage() {
                   variant="outline"
                   size="icon"
                   onClick={decrementReplicas}
-                  disabled={isScaling || desiredReplicas <= 0}
+                  disabled={isScaling || desiredReplicas <= WORKLOAD_LIMITS.MIN_REPLICAS}
                   aria-label="Decrease replica count"
                 >
                   <Minus className="h-4 w-4" />
                 </Button>
                 <Input
                   type="number"
-                  min="0"
-                  max="100"
+                  min={WORKLOAD_LIMITS.MIN_REPLICAS}
+                  max={WORKLOAD_LIMITS.MAX_REPLICAS}
                   value={desiredReplicas}
-                  onChange={(e) => setDesiredReplicas(Math.max(0, parseInt(e.target.value) || 0))}
+                  onChange={(e) => setDesiredReplicas(Math.max(WORKLOAD_LIMITS.MIN_REPLICAS, parseInt(e.target.value) || 0))}
                   disabled={isScaling}
                   className="w-24 text-center text-lg font-semibold"
                   aria-label="Number of replicas"
@@ -292,7 +293,7 @@ export default function WorkloadDetailPage() {
                   variant="outline"
                   size="icon"
                   onClick={incrementReplicas}
-                  disabled={isScaling || desiredReplicas >= 100}
+                  disabled={isScaling || desiredReplicas >= WORKLOAD_LIMITS.MAX_REPLICAS}
                   aria-label="Increase replica count"
                 >
                   <Plus className="h-4 w-4" />

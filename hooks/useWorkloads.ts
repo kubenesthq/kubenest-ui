@@ -1,18 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  getWorkload,
-  getWorkloads,
-  createWorkload,
-  scaleWorkload,
-  deleteWorkload
-} from '@/api/workloads';
+import { workloadsApi } from '@/lib/api/workloads';
 import type { CreateWorkloadRequest } from '@/types/api';
 
 // Hook to get a single workload
 export function useWorkload(id: string) {
   return useQuery({
     queryKey: ['workload', id],
-    queryFn: () => getWorkload(id),
+    queryFn: async () => {
+      const response = await workloadsApi.get(id);
+      return { data: response };
+    },
     enabled: !!id,
   });
 }
@@ -21,7 +18,10 @@ export function useWorkload(id: string) {
 export function useWorkloads(projectId: string) {
   return useQuery({
     queryKey: ['workloads', projectId],
-    queryFn: () => getWorkloads(projectId),
+    queryFn: async () => {
+      const response = await workloadsApi.list(projectId);
+      return { data: response.items };
+    },
     enabled: !!projectId,
   });
 }
@@ -31,7 +31,10 @@ export function useCreateWorkload(projectId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: CreateWorkloadRequest) => createWorkload(projectId, data),
+    mutationFn: async (data: CreateWorkloadRequest) => {
+      const response = await workloadsApi.create(projectId, data);
+      return { data: response };
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workloads', projectId] });
     },
@@ -43,7 +46,10 @@ export function useScaleWorkload(workloadId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (replicas: number) => scaleWorkload(workloadId, replicas),
+    mutationFn: async (replicas: number) => {
+      const response = await workloadsApi.scale(workloadId, { replicas });
+      return { data: response };
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workload', workloadId] });
     },
@@ -55,7 +61,7 @@ export function useDeleteWorkload() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (workloadId: string) => deleteWorkload(workloadId),
+    mutationFn: (workloadId: string) => workloadsApi.delete(workloadId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workloads'] });
     },
