@@ -1,47 +1,26 @@
-'use client';
-
 import { Badge } from '@/components/ui/badge';
 import type { Workload } from '@/types/api';
 
+type WorkloadPhase = Workload['phase'];
+
 interface WorkloadStatusBadgeProps {
-  phase: Workload['phase'];
-  className?: string;
+  phase: WorkloadPhase;
 }
 
-export function WorkloadStatusBadge({ phase, className }: WorkloadStatusBadgeProps) {
-  const config = {
-    Pending: {
-      variant: 'secondary' as const,
-      label: 'Pending',
-    },
-    Building: {
-      variant: 'default' as const,
-      label: 'Building',
-    },
-    Deploying: {
-      variant: 'warning' as const,
-      label: 'Deploying',
-    },
-    Running: {
-      variant: 'success' as const,
-      label: 'Running',
-    },
-    Failed: {
-      variant: 'destructive' as const,
-      label: 'Failed',
-    },
-    Degraded: {
-      variant: 'warning' as const,
-      label: 'Degraded',
-    },
+export function WorkloadStatusBadge({ phase }: WorkloadStatusBadgeProps) {
+  const variants: Record<WorkloadPhase, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string }> = {
+    Pending: { variant: 'outline', label: 'Pending' },
+    Deploying: { variant: 'secondary', label: 'Deploying' },
+    Running: { variant: 'default', label: 'Running' },
+    Failed: { variant: 'destructive', label: 'Failed' },
+    Degraded: { variant: 'outline', label: 'Degraded' },
   };
 
-  const { variant, label } = config[phase] || config.Pending;
+  const config = variants[phase] || variants.Pending;
 
   return (
-    <Badge variant={variant} className={className}>
-      <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-current" />
-      {label}
+    <Badge variant={config.variant} className="capitalize">
+      {config.label}
     </Badge>
   );
 }

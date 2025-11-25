@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ProjectStatusBadge } from '@/components/projects/ProjectStatusBadge';
+import { WorkloadList } from '@/components/workloads/WorkloadList';
 import {
   Dialog,
   DialogContent,
@@ -163,14 +164,7 @@ export default function ProjectDetailPage() {
             <CardTitle>Workloads</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-center py-8 text-muted-foreground">
-              <p className="mb-4">No workloads deployed yet</p>
-              <Button asChild size="sm">
-                <Link href={`/projects/${project.id}/workloads/new`}>
-                  Deploy First Workload
-                </Link>
-              </Button>
-            </div>
+            <WorkloadList projectId={project.id} />
           </CardContent>
         </Card>
       </div>
