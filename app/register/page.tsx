@@ -11,6 +11,7 @@ import { register } from '@/api/auth';
 export default function RegisterPage() {
   const router = useRouter();
   const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -22,7 +23,7 @@ export default function RegisterPage() {
     setIsLoading(true);
 
     try {
-      await register({ name, email, password });
+      await register({ name, username, email, password });
       // Redirect to login after successful registration
       router.push('/login?registered=true');
     } catch (err) {
@@ -49,15 +50,34 @@ export default function RegisterPage() {
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="name">Username</Label>
+              <Label htmlFor="name">Full Name</Label>
               <Input
                 id="name"
                 type="text"
-                placeholder="johndoe"
+                placeholder="John Doe"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                minLength={2}
+                maxLength={30}
                 required
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="username">Username</Label>
+              <Input
+                id="username"
+                type="text"
+                placeholder="johndoe"
+                value={username}
+                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''))}
+                minLength={2}
+                maxLength={20}
+                pattern="^[a-z0-9]+$"
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Lowercase letters and numbers only. Used for login.
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
@@ -78,8 +98,12 @@ export default function RegisterPage() {
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                minLength={8}
                 required
               />
+              <p className="text-xs text-muted-foreground">
+                Minimum 8 characters.
+              </p>
             </div>
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? 'Creating account...' : 'Create Account'}

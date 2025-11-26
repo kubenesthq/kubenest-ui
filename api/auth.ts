@@ -40,15 +40,24 @@ export async function login(data: LoginRequest): Promise<TokenResponse> {
   return response.json();
 }
 
+// Backend UserCreate schema requires: name, username, email, password
+export interface RegisterData {
+  name: string;       // Display name (2-30 chars)
+  username: string;   // Login username (2-20 chars, lowercase alphanumeric only)
+  email: string;
+  password: string;   // Min 8 chars with complexity requirements
+}
+
 // Register creates a new user
-export async function register(data: RegisterRequest): Promise<UserRead> {
+export async function register(data: RegisterData): Promise<UserRead> {
   const response = await fetch(`${API_URL}/api/v1/user`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      username: data.name,
+      name: data.name,
+      username: data.username,
       email: data.email,
       password: data.password,
     }),
