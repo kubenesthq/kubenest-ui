@@ -1,5 +1,3 @@
-import type { LoginRequest, RegisterRequest } from '@/types/api';
-
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export interface TokenResponse {
@@ -7,21 +5,25 @@ export interface TokenResponse {
   token_type: string;
 }
 
+// Updated to match backend UserRead schema
 export interface UserRead {
   id: number;
-  username: string;
+  name: string;
   email: string;
-  is_active: boolean;
-  is_superuser: boolean;
+  profile_image_url: string;
   tier_id: number | null;
-  created_at: string;
-  updated_at: string | null;
+}
+
+export interface LoginData {
+  email: string;
+  password: string;
 }
 
 // Login uses OAuth2 form data format, not JSON
-export async function login(data: LoginRequest): Promise<TokenResponse> {
+// Backend expects email in the 'username' field
+export async function login(data: LoginData): Promise<TokenResponse> {
   const formData = new URLSearchParams();
-  formData.append('username', data.email); // Backend expects 'username' field
+  formData.append('username', data.email); // Backend uses email as username
   formData.append('password', data.password);
 
   const response = await fetch(`${API_URL}/api/v1/login`, {
@@ -40,12 +42,11 @@ export async function login(data: LoginRequest): Promise<TokenResponse> {
   return response.json();
 }
 
-// Backend UserCreate schema requires: name, username, email, password
+// Backend UserCreate schema: name, email, password (no separate username)
 export interface RegisterData {
-  name: string;       // Display name (2-30 chars)
-  username: string;   // Login username (2-20 chars, lowercase alphanumeric only)
+  name: string;       // Display name (2-100 chars)
   email: string;
-  password: string;   // Min 8 chars with complexity requirements
+  password: string;   // Min 8 chars
 }
 
 // Register creates a new user
@@ -57,7 +58,6 @@ export async function register(data: RegisterData): Promise<UserRead> {
     },
     body: JSON.stringify({
       name: data.name,
-      username: data.username,
       email: data.email,
       password: data.password,
     }),

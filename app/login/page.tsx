@@ -14,7 +14,7 @@ export default function LoginPage() {
   const searchParams = useSearchParams();
   const justRegistered = searchParams.get('registered') === 'true';
   const authLogin = useAuthStore((state) => state.login);
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -25,8 +25,7 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      // Backend expects 'username' in the form data
-      const tokenResponse = await login({ email: username, password });
+      const tokenResponse = await login({ email, password });
 
       // Store the token first
       localStorage.setItem('token', tokenResponse.access_token);
@@ -38,7 +37,7 @@ export default function LoginPage() {
       authLogin(tokenResponse.access_token, {
         id: String(user.id),
         email: user.email,
-        name: user.username,
+        name: user.name,
       });
 
       router.push('/');
@@ -71,13 +70,13 @@ export default function LoginPage() {
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="email">Email</Label>
               <Input
-                id="username"
-                type="text"
-                placeholder="johndoe"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                id="email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
               />
             </div>
