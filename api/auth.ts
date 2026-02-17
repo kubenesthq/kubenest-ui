@@ -2,7 +2,9 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export interface TokenResponse {
   access_token: string;
+  refresh_token?: string;
   token_type: string;
+  expires_in?: number;
 }
 
 // Updated to match backend UserRead schema
@@ -80,6 +82,23 @@ export async function logout(): Promise<void> {
       ...(token && { Authorization: `Bearer ${token}` }),
     },
   });
+}
+
+// Refresh access token using refresh token
+export async function refreshAccessToken(refreshToken: string): Promise<TokenResponse> {
+  const response = await fetch(`${API_URL}/api/v1/refresh`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Token refresh failed');
+  }
+
+  return response.json();
 }
 
 // Get current user info

@@ -29,16 +29,19 @@ export default function LoginPage() {
 
       // Store the token first
       localStorage.setItem('token', tokenResponse.access_token);
+      if (tokenResponse.refresh_token) {
+        localStorage.setItem('refreshToken', tokenResponse.refresh_token);
+      }
 
       // Get user info
       const user = await getCurrentUser();
 
-      // Update auth store
+      // Update auth store with both tokens
       authLogin(tokenResponse.access_token, {
         id: String(user.id),
         email: user.email,
         name: user.name,
-      });
+      }, tokenResponse.refresh_token);
 
       router.push('/');
     } catch (err) {

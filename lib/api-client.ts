@@ -1,10 +1,14 @@
+import { refreshAccessToken } from '@/api/auth';
+import { useAuthStore } from '@/store/auth';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 interface RequestOptions extends RequestInit {
   token?: string;
+  _retried?: boolean;
 }
 
-async function fetchWithAuth(url: string, options: RequestOptions = {}) {
+async function fetchWithAuth(url: string, options: RequestOptions = {}): Promise<any> {
   const token = options.token || (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
 
   const response = await fetch(`${API_URL}/api/v1${url}`, {
@@ -16,10 +20,15 @@ async function fetchWithAuth(url: string, options: RequestOptions = {}) {
     },
   });
 
-  // Handle auth errors
-  if (response.status === 401) {
+  // Handle auth errors - attempt refresh before logging out
+  if (response.status === 401 && !options._retried) {
+    const refreshed = await tryRefreshToken();
+    if (refreshed) {
+      return fetchWithAuth(url, { ...options, _retried: true });
+    }
+
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('token');
+      useAuthStore.getState().logout();
       window.location.href = '/login';
     }
     throw new Error('Unauthorized');
@@ -31,6 +40,42 @@ async function fetchWithAuth(url: string, options: RequestOptions = {}) {
   }
 
   return response.json();
+}
+
+let refreshPromise: Promise<boolean> | null = null;
+
+async function tryRefreshToken(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+
+  const storedRefreshToken = localStorage.getItem('refreshToken');
+  if (!storedRefreshToken) return false;
+
+  // Deduplicate concurrent refresh attempts
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    try {
+      const tokenResponse = await refreshAccessToken(storedRefreshToken);
+      localStorage.setItem('token', tokenResponse.access_token);
+      if (tokenResponse.refresh_token) {
+        localStorage.setItem('refreshToken', tokenResponse.refresh_token);
+        useAuthStore.getState().login(
+          tokenResponse.access_token,
+          useAuthStore.getState().user!,
+          tokenResponse.refresh_token
+        );
+      } else {
+        useAuthStore.getState().setToken(tokenResponse.access_token);
+      }
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
 }
 
 export const apiClient = {
