@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import Link from 'next/link';
-import { Minus, Plus } from 'lucide-react';
+import { ExternalLink, Minus, Plus } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -330,6 +330,63 @@ export default function WorkloadDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Ingress Configuration */}
+      {workload.ingress_config && workload.ingress_config.enabled && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Ingress</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <div className="text-sm font-medium text-muted-foreground">Host</div>
+                <div className="text-sm font-semibold">{workload.ingress_config.host}</div>
+              </div>
+              <div>
+                <div className="text-sm font-medium text-muted-foreground">Path</div>
+                <div className="text-sm">{workload.ingress_config.path}</div>
+              </div>
+              <div>
+                <div className="text-sm font-medium text-muted-foreground">TLS</div>
+                <div className="text-sm">
+                  {workload.ingress_config.tls_secret ? (
+                    <span className="text-green-600 dark:text-green-400">Enabled ({workload.ingress_config.tls_secret})</span>
+                  ) : (
+                    <span className="text-muted-foreground">Not configured</span>
+                  )}
+                </div>
+              </div>
+              {workload.ingress_config.host && (
+                <div>
+                  <div className="text-sm font-medium text-muted-foreground">External URL</div>
+                  <a
+                    href={`${workload.ingress_config.tls_secret ? 'https' : 'http'}://${workload.ingress_config.host}${workload.ingress_config.path}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-primary hover:underline inline-flex items-center gap-1"
+                  >
+                    {workload.ingress_config.tls_secret ? 'https' : 'http'}://{workload.ingress_config.host}{workload.ingress_config.path}
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+              )}
+            </div>
+            {workload.ingress_config.annotations && Object.keys(workload.ingress_config.annotations).length > 0 && (
+              <div>
+                <div className="text-sm font-medium text-muted-foreground mb-2">Annotations</div>
+                <div className="bg-muted rounded-md p-3 space-y-1">
+                  {Object.entries(workload.ingress_config.annotations).map(([key, value]) => (
+                    <div key={key} className="text-xs font-mono">
+                      <span className="text-muted-foreground">{key}:</span> {value}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Status Events */}
       <Card>

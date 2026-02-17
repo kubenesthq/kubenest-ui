@@ -74,6 +74,15 @@ export interface CreateProjectRequest {
   guardrails_config?: Record<string, unknown>;
 }
 
+// Ingress types
+export interface IngressConfig {
+  enabled: boolean;
+  host: string | null;
+  path: string;
+  tls_secret: string | null;
+  annotations: Record<string, string> | null;
+}
+
 // Workload types
 export type WorkloadPhase = 'pending' | 'building' | 'deploying' | 'running' | 'degraded' | 'failed';
 export type WorkloadType = 'deployment' | 'statefulset';
@@ -89,6 +98,7 @@ export interface Workload {
   ready_replicas: number;
   port: number | null;
   phase: WorkloadPhase;
+  ingress_config: IngressConfig | null;
   build_config: Record<string, unknown> | null;
   exports: Record<string, unknown> | null;
   url: string | null;
@@ -106,6 +116,7 @@ export interface CreateWorkloadRequest {
   replicas?: number;
   port?: number;
   build_config?: Record<string, unknown>;
+  ingress?: IngressConfig;
 }
 
 export interface WorkloadUpdateRequest {
@@ -115,6 +126,7 @@ export interface WorkloadUpdateRequest {
   replicas?: number;
   port?: number;
   build_config?: Record<string, unknown>;
+  ingress?: IngressConfig;
 }
 
 export interface ScaleRequest {

@@ -21,6 +21,10 @@ const createProjectSchema = z.object({
     .max(63, 'Name must be at most 63 characters')
     .regex(/^[a-zA-Z0-9-]+$/, 'Name can only contain letters, numbers, and hyphens'),
   description: z.string().optional(),
+  registry_secret: z.string()
+    .regex(/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/, 'Must be a valid Kubernetes name (lowercase alphanumeric and hyphens)')
+    .optional()
+    .or(z.literal('')),
 });
 
 type CreateProjectFormData = z.infer<typeof createProjectSchema>;
@@ -41,6 +45,7 @@ export default function NewProjectPage() {
     defaultValues: {
       name: '',
       description: '',
+      registry_secret: '',
     },
   });
 
@@ -60,6 +65,8 @@ export default function NewProjectPage() {
     createMutation.mutate({
       name: data.name,
       cluster_id: clusterId,
+      ...(data.description && { description: data.description }),
+      ...(data.registry_secret && { registry_secret: data.registry_secret }),
     });
   };
 
@@ -115,6 +122,20 @@ export default function NewProjectPage() {
                   placeholder="Optional project description"
                   disabled={isSubmitting}
                 />
+              </FormField>
+
+              <FormField
+                label="Registry Secret"
+                error={form.formState.errors.registry_secret?.message}
+              >
+                <Input
+                  {...form.register('registry_secret')}
+                  placeholder="my-registry-secret"
+                  disabled={isSubmitting}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Kubernetes secret name for pulling images from a private registry
+                </p>
               </FormField>
 
               <div className="flex justify-end gap-3 mt-6">
