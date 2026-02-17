@@ -48,7 +48,7 @@ export function InstallCommandModal({
         </DialogHeader>
         <div className="space-y-4">
           <div className="relative">
-            <pre className="rounded-lg bg-muted p-4 pr-12 text-sm overflow-x-auto">
+            <pre className="rounded-lg bg-muted p-4 pr-12 text-sm whitespace-pre-wrap break-all">
               <code>{command}</code>
             </pre>
             <Button

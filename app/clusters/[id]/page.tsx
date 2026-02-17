@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { Loader2, Trash2, Copy, ArrowLeft } from 'lucide-react';
+import { Loader2, Trash2, Copy, ArrowLeft, Plus } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -163,11 +163,19 @@ export default function ClusterDetailPage() {
 
       {/* Projects Card */}
       <Card>
-        <CardHeader>
-          <CardTitle>Projects</CardTitle>
-          <CardDescription>
-            Projects (namespaces) running in this cluster
-          </CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Projects</CardTitle>
+            <CardDescription>
+              Projects (namespaces) running in this cluster
+            </CardDescription>
+          </div>
+          <Button asChild size="sm">
+            <a href={`/clusters/${clusterId}/projects/new`}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Project
+            </a>
+          </Button>
         </CardHeader>
         <CardContent>
           {projects.length === 0 ? (
@@ -179,40 +187,16 @@ export default function ClusterDetailPage() {
               {projects.map((project) => (
                 <div
                   key={project.id}
-                  className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+                  className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer"
+                  onClick={() => router.push(`/projects/${project.id}`)}
                 >
                   <div>
-                    <p className="font-medium">{project.display_name}</p>
-                    <p className="text-sm text-muted-foreground">{project.name}</p>
+                    <p className="font-medium">{project.display_name || project.name}</p>
+                    <p className="text-sm text-muted-foreground">{project.namespace}</p>
                   </div>
                   <span className="text-sm capitalize">{project.status}</span>
                 </div>
               ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Cluster Information */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Cluster Information</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Cluster ID</p>
-            <p className="text-sm font-mono mt-1">{cluster.id}</p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Cluster Name</p>
-            <p className="text-sm font-medium mt-1">{cluster.name}</p>
-          </div>
-          {cluster.last_heartbeat && (
-            <div>
-              <p className="text-sm text-muted-foreground">Last Heartbeat</p>
-              <p className="text-sm font-medium mt-1">
-                {new Date(cluster.last_heartbeat).toLocaleString()}
-              </p>
             </div>
           )}
         </CardContent>

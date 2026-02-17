@@ -1,6 +1,6 @@
 'use client';
 
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import {
@@ -16,6 +16,7 @@ import { clustersApi } from '@/lib/api/clusters';
 import { getConnectionStatus } from '@/types/api';
 
 export function ClusterList() {
+  const router = useRouter();
   const { data, isLoading, error } = useQuery({
     queryKey: ['clusters'],
     queryFn: clustersApi.list,
@@ -69,14 +70,13 @@ export function ClusterList() {
           {clusters.map((cluster) => {
             const connectionStatus = getConnectionStatus(cluster);
             return (
-              <TableRow key={cluster.id}>
+              <TableRow
+                key={cluster.id}
+                className="cursor-pointer"
+                onClick={() => router.push(`/clusters/${cluster.id}`)}
+              >
                 <TableCell>
-                  <Link
-                    href={`/clusters/${cluster.id}`}
-                    className="font-medium hover:underline"
-                  >
-                    {cluster.name}
-                  </Link>
+                  <span className="font-medium">{cluster.name}</span>
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   {cluster.description || '-'}
