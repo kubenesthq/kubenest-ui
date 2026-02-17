@@ -40,7 +40,7 @@ export function ClusterList() {
     );
   }
 
-  const clusters = data?.items || [];
+  const clusters = data?.data || [];
 
   if (clusters.length === 0) {
     return (
@@ -75,7 +75,7 @@ export function ClusterList() {
                     href={`/clusters/${cluster.id}`}
                     className="font-medium hover:underline"
                   >
-                    {cluster.display_name || cluster.name}
+                    {cluster.name}
                   </Link>
                 </TableCell>
                 <TableCell className="text-muted-foreground">

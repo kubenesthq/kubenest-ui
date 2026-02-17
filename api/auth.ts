@@ -2,9 +2,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export interface TokenResponse {
   access_token: string;
-  refresh_token?: string;
   token_type: string;
-  expires_in?: number;
 }
 
 // Updated to match backend UserRead schema
@@ -23,6 +21,7 @@ export interface LoginData {
 
 // Login uses OAuth2 form data format, not JSON
 // Backend expects email in the 'username' field
+// Uses credentials: 'include' so the backend can set refresh token as HTTP-only cookie
 export async function login(data: LoginData): Promise<TokenResponse> {
   const formData = new URLSearchParams();
   formData.append('username', data.email); // Backend uses email as username
@@ -34,6 +33,7 @@ export async function login(data: LoginData): Promise<TokenResponse> {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: formData,
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -81,17 +81,15 @@ export async function logout(): Promise<void> {
     headers: {
       ...(token && { Authorization: `Bearer ${token}` }),
     },
+    credentials: 'include',
   });
 }
 
-// Refresh access token using refresh token
-export async function refreshAccessToken(refreshToken: string): Promise<TokenResponse> {
+// Refresh access token using HTTP-only cookie (no body needed)
+export async function refreshAccessToken(): Promise<TokenResponse> {
   const response = await fetch(`${API_URL}/api/v1/refresh`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ refresh_token: refreshToken }),
+    credentials: 'include',
   });
 
   if (!response.ok) {

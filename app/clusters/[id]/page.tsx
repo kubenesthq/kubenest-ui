@@ -19,6 +19,7 @@ import { useCluster, useClusterProjects, useDeleteCluster } from '@/hooks/useClu
 import { clustersApi } from '@/lib/api/clusters';
 import { getConnectionStatus } from '@/types/api';
 import { useAuth } from '@/hooks/useAuth';
+import { useQuery } from '@tanstack/react-query';
 
 export default function ClusterDetailPage() {
   const router = useRouter();
@@ -32,6 +33,11 @@ export default function ClusterDetailPage() {
   const { data: cluster, isLoading, error } = useCluster(clusterId);
   const { data: projectsData } = useClusterProjects(clusterId);
   const deleteClusterMutation = useDeleteCluster();
+  const { data: installData } = useQuery({
+    queryKey: ['clusters', clusterId, 'install-command'],
+    queryFn: () => clustersApi.getInstallCommand(clusterId),
+    enabled: !!cluster && cluster.status === 'pending',
+  });
 
   const handleDelete = async () => {
     try {
@@ -69,8 +75,7 @@ export default function ClusterDetailPage() {
   }
 
   const connectionStatus = getConnectionStatus(cluster);
-  const projects = projectsData?.items || [];
-  const installCommand = clustersApi.getInstallCommand(cluster);
+  const projects = projectsData?.data || [];
 
   return (
     <div className="container mx-auto py-8 space-y-8">
@@ -82,7 +87,7 @@ export default function ClusterDetailPage() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold tracking-tight">
-              {cluster.display_name || cluster.name}
+              {cluster.name}
             </h1>
             <p className="text-muted-foreground mt-1">{cluster.description}</p>
           </div>
@@ -180,7 +185,7 @@ export default function ClusterDetailPage() {
                     <p className="font-medium">{project.display_name}</p>
                     <p className="text-sm text-muted-foreground">{project.name}</p>
                   </div>
-                  <span className="text-sm capitalize">{project.phase}</span>
+                  <span className="text-sm capitalize">{project.status}</span>
                 </div>
               ))}
             </div>
@@ -202,12 +207,6 @@ export default function ClusterDetailPage() {
             <p className="text-sm text-muted-foreground">Cluster Name</p>
             <p className="text-sm font-medium mt-1">{cluster.name}</p>
           </div>
-          {cluster.operator_version && (
-            <div>
-              <p className="text-sm text-muted-foreground">Operator Version</p>
-              <p className="text-sm font-medium mt-1">{cluster.operator_version}</p>
-            </div>
-          )}
           {cluster.last_heartbeat && (
             <div>
               <p className="text-sm text-muted-foreground">Last Heartbeat</p>
@@ -248,8 +247,8 @@ export default function ClusterDetailPage() {
       <InstallCommandModal
         open={showInstallModal}
         onOpenChange={setShowInstallModal}
-        command={installCommand}
-        clusterName={cluster.display_name || cluster.name}
+        command={installData?.command || 'Loading...'}
+        clusterName={cluster.name}
       />
     </div>
   );

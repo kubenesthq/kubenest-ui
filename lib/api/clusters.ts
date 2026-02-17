@@ -3,7 +3,7 @@ import type {
   Cluster,
   ClusterListResponse,
   ClusterCreateRequest,
-  Project,
+  ClusterCreateResponse,
   ProjectListResponse,
 } from '@/types/api';
 
@@ -16,7 +16,7 @@ export const clustersApi = {
 
   // Create cluster
   create: (data: ClusterCreateRequest) =>
-    apiClient.post<Cluster>('/clusters', data),
+    apiClient.post<ClusterCreateResponse>('/clusters', data),
 
   // Delete cluster
   delete: (id: string) => apiClient.delete<void>(`/clusters/${id}`),
@@ -25,15 +25,9 @@ export const clustersApi = {
   getProjects: (clusterId: string) =>
     apiClient.get<ProjectListResponse>(`/projects?cluster_id=${clusterId}`),
 
-  // Get install command for a cluster
-  getInstallCommand: (cluster: Cluster) => {
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    return `helm repo add kubenest https://charts.kubenest.io && \\
-helm install kubenest-operator kubenest/kubenest-operator \\
-  --namespace kubenest-system \\
-  --create-namespace \\
-  --set cluster.id=${cluster.id} \\
-  --set cluster.name=${cluster.name} \\
-  --set api.url=${baseUrl}`;
-  },
+  // Get install command from server
+  getInstallCommand: (clusterId: string) =>
+    apiClient.get<{ command: string; token: string; cluster_id: string; hub_url: string }>(
+      `/clusters/${clusterId}/install-command`
+    ),
 };

@@ -12,6 +12,8 @@ import { useCreateWorkload } from '@/hooks/useWorkloads';
 import { WORKLOAD_LIMITS } from '@/lib/constants/workloads';
 import type { CreateWorkloadRequest } from '@/types/api';
 
+type WorkloadFormPayload = Omit<CreateWorkloadRequest, 'project_id'>;
+
 // Validation schema matching the requirements
 const workloadSchema = z.object({
   name: z
@@ -59,8 +61,8 @@ export default function NewWorkloadPage() {
 
   const onSubmit = async (data: WorkloadFormData) => {
     try {
-      // Prepare the request payload
-      const payload: CreateWorkloadRequest = {
+      // Prepare the request payload (project_id is added by the hook)
+      const payload: WorkloadFormPayload = {
         name: data.name,
         image: data.image,
         replicas: data.replicas,
@@ -74,7 +76,7 @@ export default function NewWorkloadPage() {
       const response = await createWorkloadMutation.mutateAsync(payload);
 
       // Navigate to the workload detail page on success
-      router.push(`/workloads/${response.data.id}`);
+      router.push(`/workloads/${response.id}`);
     } catch (error) {
       // Handle API errors
       const errorMessage =

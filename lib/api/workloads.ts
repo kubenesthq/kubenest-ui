@@ -2,18 +2,9 @@ import { apiClient } from '../api-client';
 import type {
   Workload,
   CreateWorkloadRequest,
+  WorkloadListResponse,
+  ScaleRequest,
 } from '@/types/api';
-
-export interface WorkloadListResponse {
-  items: Workload[];
-  total: number;
-  page: number;
-  page_size: number;
-}
-
-export interface ScaleWorkloadRequest {
-  replicas: number;
-}
 
 export const workloadsApi = {
   // List all workloads for a project
@@ -24,13 +15,13 @@ export const workloadsApi = {
   get: (workloadId: string) =>
     apiClient.get<Workload>(`/workloads/${workloadId}`),
 
-  // Create workload
-  create: (projectId: string, data: CreateWorkloadRequest) =>
-    apiClient.post<Workload>(`/projects/${projectId}/workloads`, data),
+  // Create workload (POST /workloads with project_id in body)
+  create: (data: CreateWorkloadRequest) =>
+    apiClient.post<Workload>('/workloads', data),
 
-  // Scale workload
-  scale: (workloadId: string, data: ScaleWorkloadRequest) =>
-    apiClient.patch<Workload>(`/workloads/${workloadId}/scale`, data),
+  // Scale workload (POST, not PATCH)
+  scale: (workloadId: string, data: ScaleRequest) =>
+    apiClient.post<Workload>(`/workloads/${workloadId}/scale`, data),
 
   // Delete workload
   delete: (workloadId: string) =>
@@ -38,5 +29,8 @@ export const workloadsApi = {
 
   // Redeploy workload
   redeploy: (workloadId: string) =>
-    apiClient.post<Workload>(`/workloads/${workloadId}/redeploy`, {}),
+    apiClient.post<{ message: string; workload_id: string; phase: string }>(
+      `/workloads/${workloadId}/redeploy`,
+      {}
+    ),
 };

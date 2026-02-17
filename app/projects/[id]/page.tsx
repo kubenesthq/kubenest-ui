@@ -34,7 +34,7 @@ export default function ProjectDetailPage() {
     queryFn: () => getProject(projectId),
   });
 
-  const project = projectData?.data;
+  const project = projectData;
 
   const { data: clusterData } = useQuery({
     queryKey: ['cluster', project?.cluster_id],
@@ -84,7 +84,7 @@ export default function ProjectDetailPage() {
     );
   }
 
-  const cluster = clusterData?.data;
+  const cluster = clusterData;
 
   return (
     <div className="container mx-auto py-8 space-y-6">
@@ -184,7 +184,7 @@ export default function ProjectDetailPage() {
                 </div>
               </div>
             </div>
-            {project.updated_at !== project.created_at && (
+            {project.updated_at && project.updated_at !== project.created_at && (
               <div className="flex items-start gap-3 text-sm">
                 <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5"></div>
                 <div className="flex-1">

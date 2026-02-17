@@ -35,8 +35,7 @@ export default function WorkloadDetailPage() {
   const queryClient = useQueryClient();
 
   // Fetch workload data
-  const { data: workloadData, isLoading: workloadLoading } = useWorkload(workloadId);
-  const workload = workloadData?.data;
+  const { data: workload, isLoading: workloadLoading } = useWorkload(workloadId);
 
   // Real-time SSE connection for this workload
   const { lastEvent, connected, reconnecting } = useSSE({
@@ -78,7 +77,7 @@ export default function WorkloadDetailPage() {
     queryFn: () => getProject(workload!.project_id),
     enabled: !!workload?.project_id,
   });
-  const project = projectData?.data;
+  const project = projectData;
 
   // Scale mutation
   const scaleMutation = useScaleWorkload(workloadId);
@@ -251,12 +250,14 @@ export default function WorkloadDetailPage() {
                 {format(new Date(workload.created_at), 'PPpp')}
               </div>
             </div>
-            <div>
-              <div className="text-sm font-medium text-muted-foreground">Last Updated</div>
-              <div className="text-sm">
-                {format(new Date(workload.updated_at), 'PPpp')}
+            {workload.updated_at && (
+              <div>
+                <div className="text-sm font-medium text-muted-foreground">Last Updated</div>
+                <div className="text-sm">
+                  {format(new Date(workload.updated_at), 'PPpp')}
+                </div>
               </div>
-            </div>
+            )}
           </CardContent>
         </Card>
 
@@ -346,7 +347,7 @@ export default function WorkloadDetailPage() {
                 </div>
               </div>
             </div>
-            {workload.updated_at !== workload.created_at && (
+            {workload.updated_at && workload.updated_at !== workload.created_at && (
               <div className="flex items-start gap-3 text-sm">
                 <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5"></div>
                 <div className="flex-1">
@@ -357,7 +358,7 @@ export default function WorkloadDetailPage() {
                 </div>
               </div>
             )}
-            {workload.phase === 'Running' && (
+            {workload.phase === 'running' && (
               <div className="flex items-start gap-3 text-sm">
                 <div className="w-2 h-2 rounded-full bg-green-500 mt-1.5"></div>
                 <div className="flex-1">
@@ -368,7 +369,7 @@ export default function WorkloadDetailPage() {
                 </div>
               </div>
             )}
-            {workload.phase === 'Failed' && (
+            {workload.phase === 'failed' && (
               <div className="flex items-start gap-3 text-sm">
                 <div className="w-2 h-2 rounded-full bg-red-500 mt-1.5"></div>
                 <div className="flex-1">

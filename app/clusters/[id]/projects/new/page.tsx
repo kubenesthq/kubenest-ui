@@ -47,7 +47,7 @@ export default function NewProjectPage() {
   const createMutation = useMutation({
     mutationFn: createProject,
     onSuccess: (response) => {
-      router.push(`/projects/${response.data.id}`);
+      router.push(`/projects/${response.id}`);
     },
     onError: (error: Error) => {
       alert(`Failed to create project: ${error.message}`);
@@ -73,7 +73,7 @@ export default function NewProjectPage() {
     );
   }
 
-  const cluster = clusterData?.data;
+  const cluster = clusterData;
 
   return (
     <div className="container mx-auto py-8 max-w-2xl">

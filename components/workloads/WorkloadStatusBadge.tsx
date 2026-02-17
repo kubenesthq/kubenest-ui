@@ -1,22 +1,22 @@
 import { Badge } from '@/components/ui/badge';
-import type { Workload } from '@/types/api';
-
-type WorkloadPhase = Workload['phase'];
 
 interface WorkloadStatusBadgeProps {
-  phase: WorkloadPhase;
+  phase: string;
 }
 
-export function WorkloadStatusBadge({ phase }: WorkloadStatusBadgeProps) {
-  const variants: Record<WorkloadPhase, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string }> = {
-    Pending: { variant: 'outline', label: 'Pending' },
-    Deploying: { variant: 'secondary', label: 'Deploying' },
-    Running: { variant: 'default', label: 'Running' },
-    Failed: { variant: 'destructive', label: 'Failed' },
-    Degraded: { variant: 'outline', label: 'Degraded' },
-  };
+const variants: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string }> = {
+  pending: { variant: 'outline', label: 'Pending' },
+  building: { variant: 'secondary', label: 'Building' },
+  deploying: { variant: 'secondary', label: 'Deploying' },
+  running: { variant: 'default', label: 'Running' },
+  failed: { variant: 'destructive', label: 'Failed' },
+  degraded: { variant: 'outline', label: 'Degraded' },
+};
 
-  const config = variants[phase] || variants.Pending;
+const defaultVariant = { variant: 'outline' as const, label: 'Unknown' };
+
+export function WorkloadStatusBadge({ phase }: WorkloadStatusBadgeProps) {
+  const config = variants[phase.toLowerCase()] || defaultVariant;
 
   return (
     <Badge

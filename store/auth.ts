@@ -10,37 +10,30 @@ interface User {
 interface AuthState {
   user: User | null;
   token: string | null;
-  refreshToken: string | null;
   isAuthenticated: boolean;
-  login: (token: string, user: User, refreshToken?: string) => void;
+  login: (token: string, user: User) => void;
   logout: () => void;
   setUser: (user: User) => void;
   setToken: (token: string) => void;
-  getRefreshToken: () => string | null;
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       user: null,
       token: null,
-      refreshToken: null,
       isAuthenticated: false,
-      login: (token, user, refreshToken) => {
+      login: (token, user) => {
         if (typeof window !== 'undefined') {
           localStorage.setItem('token', token);
-          if (refreshToken) {
-            localStorage.setItem('refreshToken', refreshToken);
-          }
         }
-        set({ token, user, refreshToken: refreshToken || null, isAuthenticated: true });
+        set({ token, user, isAuthenticated: true });
       },
       logout: () => {
         if (typeof window !== 'undefined') {
           localStorage.removeItem('token');
-          localStorage.removeItem('refreshToken');
         }
-        set({ token: null, refreshToken: null, user: null, isAuthenticated: false });
+        set({ token: null, user: null, isAuthenticated: false });
       },
       setUser: (user) => set({ user }),
       setToken: (token) => {
@@ -49,7 +42,6 @@ export const useAuthStore = create<AuthState>()(
         }
         set({ token });
       },
-      getRefreshToken: () => get().refreshToken,
     }),
     {
       name: 'auth-storage',

@@ -11,9 +11,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { InstallCommandModal } from '@/components/clusters/InstallCommandModal';
 import { useCreateCluster } from '@/hooks/useClusters';
-import { clustersApi } from '@/lib/api/clusters';
 import { useAuth } from '@/hooks/useAuth';
-import type { Cluster } from '@/types/api';
+import type { ClusterCreateResponse } from '@/types/api';
 
 const clusterSchema = z.object({
   name: z
@@ -24,7 +23,6 @@ const clusterSchema = z.object({
       /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/,
       'Name must be lowercase alphanumeric with hyphens'
     ),
-  display_name: z.string().min(1, 'Display name is required'),
   description: z.string().optional(),
 });
 
@@ -33,7 +31,7 @@ type ClusterFormData = z.infer<typeof clusterSchema>;
 export default function NewClusterPage() {
   const router = useRouter();
   const { isAuthenticated } = useAuth(true);
-  const [createdCluster, setCreatedCluster] = useState<Cluster | null>(null);
+  const [createdCluster, setCreatedCluster] = useState<ClusterCreateResponse | null>(null);
   const [showInstallModal, setShowInstallModal] = useState(false);
 
   const {
@@ -104,24 +102,6 @@ export default function NewClusterPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="display_name">
-                Display Name <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="display_name"
-                placeholder="Production US West"
-                {...register('display_name')}
-                aria-invalid={!!errors.display_name}
-              />
-              {errors.display_name && (
-                <p className="text-sm text-destructive">{errors.display_name.message}</p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Human-readable name for the cluster
-              </p>
-            </div>
-
-            <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
               <Input
                 id="description"
@@ -164,9 +144,9 @@ export default function NewClusterPage() {
       {createdCluster && (
         <InstallCommandModal
           open={showInstallModal}
-          onOpenChange={setShowInstallModal}
-          command={clustersApi.getInstallCommand(createdCluster)}
-          clusterName={createdCluster.display_name || createdCluster.name}
+          onOpenChange={handleModalClose}
+          command={createdCluster.install_command}
+          clusterName={createdCluster.name}
         />
       )}
     </div>

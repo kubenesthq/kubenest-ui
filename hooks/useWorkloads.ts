@@ -6,10 +6,7 @@ import type { CreateWorkloadRequest } from '@/types/api';
 export function useWorkload(id: string) {
   return useQuery({
     queryKey: ['workload', id],
-    queryFn: async () => {
-      const response = await workloadsApi.get(id);
-      return { data: response };
-    },
+    queryFn: () => workloadsApi.get(id),
     enabled: !!id,
   });
 }
@@ -18,10 +15,7 @@ export function useWorkload(id: string) {
 export function useWorkloads(projectId: string) {
   return useQuery({
     queryKey: ['workloads', projectId],
-    queryFn: async () => {
-      const response = await workloadsApi.list(projectId);
-      return { data: response.items };
-    },
+    queryFn: () => workloadsApi.list(projectId),
     enabled: !!projectId,
   });
 }
@@ -31,10 +25,8 @@ export function useCreateWorkload(projectId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: CreateWorkloadRequest) => {
-      const response = await workloadsApi.create(projectId, data);
-      return { data: response };
-    },
+    mutationFn: (data: Omit<CreateWorkloadRequest, 'project_id'>) =>
+      workloadsApi.create({ ...data, project_id: projectId }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workloads', projectId] });
     },
@@ -46,10 +38,8 @@ export function useScaleWorkload(workloadId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (replicas: number) => {
-      const response = await workloadsApi.scale(workloadId, { replicas });
-      return { data: response };
-    },
+    mutationFn: (replicas: number) =>
+      workloadsApi.scale(workloadId, { replicas }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workload', workloadId] });
     },

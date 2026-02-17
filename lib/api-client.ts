@@ -18,9 +18,10 @@ async function fetchWithAuth(url: string, options: RequestOptions = {}): Promise
       ...(token && { Authorization: `Bearer ${token}` }),
       ...options.headers,
     },
+    credentials: 'include',
   });
 
-  // Handle auth errors - attempt refresh before logging out
+  // Handle auth errors - attempt cookie-based refresh before logging out
   if (response.status === 401 && !options._retried) {
     const refreshed = await tryRefreshToken();
     if (refreshed) {
@@ -36,7 +37,12 @@ async function fetchWithAuth(url: string, options: RequestOptions = {}): Promise
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: 'An error occurred' }));
-    throw new Error(error.message || `HTTP error! status: ${response.status}`);
+    throw new Error(error.message || error.detail || `HTTP error! status: ${response.status}`);
+  }
+
+  // Handle 204 No Content
+  if (response.status === 204) {
+    return undefined;
   }
 
   return response.json();
@@ -47,26 +53,15 @@ let refreshPromise: Promise<boolean> | null = null;
 async function tryRefreshToken(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
 
-  const storedRefreshToken = localStorage.getItem('refreshToken');
-  if (!storedRefreshToken) return false;
-
   // Deduplicate concurrent refresh attempts
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async () => {
     try {
-      const tokenResponse = await refreshAccessToken(storedRefreshToken);
+      // Cookie-based refresh - no body needed
+      const tokenResponse = await refreshAccessToken();
       localStorage.setItem('token', tokenResponse.access_token);
-      if (tokenResponse.refresh_token) {
-        localStorage.setItem('refreshToken', tokenResponse.refresh_token);
-        useAuthStore.getState().login(
-          tokenResponse.access_token,
-          useAuthStore.getState().user!,
-          tokenResponse.refresh_token
-        );
-      } else {
-        useAuthStore.getState().setToken(tokenResponse.access_token);
-      }
+      useAuthStore.getState().setToken(tokenResponse.access_token);
       return true;
     } catch {
       return false;

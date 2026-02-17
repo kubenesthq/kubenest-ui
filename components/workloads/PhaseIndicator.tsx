@@ -1,32 +1,36 @@
 'use client';
 
 import { Check, Loader2, Circle } from 'lucide-react';
-import type { Workload } from '@/types/api';
 import { cn } from '@/lib/utils';
 
 interface PhaseIndicatorProps {
-  currentPhase: Workload['phase'];
+  currentPhase: string;
   className?: string;
 }
 
-type Phase = 'Pending' | 'Building' | 'Deploying' | 'Running';
+const phases = ['pending', 'building', 'deploying', 'running'] as const;
 
-const phases: Phase[] = ['Pending', 'Building', 'Deploying', 'Running'];
+const phaseLabels: Record<string, string> = {
+  pending: 'Pending',
+  building: 'Building',
+  deploying: 'Deploying',
+  running: 'Running',
+};
 
 export function PhaseIndicator({ currentPhase, className }: PhaseIndicatorProps) {
-  // Map phases to order index
   const phaseOrder: Record<string, number> = {
-    Pending: 0,
-    Building: 1,
-    Deploying: 2,
-    Running: 3,
-    Failed: -1, // Special case
-    Degraded: 3, // Show as partially complete
+    pending: 0,
+    building: 1,
+    deploying: 2,
+    running: 3,
+    failed: -1,
+    degraded: 3,
   };
 
-  const currentIndex = phaseOrder[currentPhase] ?? 0;
-  const isFailed = currentPhase === 'Failed';
-  const isDegraded = currentPhase === 'Degraded';
+  const normalizedPhase = currentPhase.toLowerCase();
+  const currentIndex = phaseOrder[normalizedPhase] ?? 0;
+  const isFailed = normalizedPhase === 'failed';
+  const isDegraded = normalizedPhase === 'degraded';
 
   return (
     <div
@@ -45,7 +49,6 @@ export function PhaseIndicator({ currentPhase, className }: PhaseIndicatorProps)
 
         return (
           <div key={phase} className="flex items-center gap-2">
-            {/* Phase circle */}
             <div className="flex flex-col items-center gap-1">
               <div
                 className={cn(
@@ -66,7 +69,6 @@ export function PhaseIndicator({ currentPhase, className }: PhaseIndicatorProps)
                 {isPending && <Circle className="h-4 w-4" />}
               </div>
 
-              {/* Phase label */}
               <span
                 className={cn('text-xs font-medium', {
                   'text-green-600': isCompleted,
@@ -76,11 +78,10 @@ export function PhaseIndicator({ currentPhase, className }: PhaseIndicatorProps)
                   'text-gray-500': isPending,
                 })}
               >
-                {phase}
+                {phaseLabels[phase]}
               </span>
             </div>
 
-            {/* Connector line */}
             {index < phases.length - 1 && (
               <div
                 className={cn('h-0.5 w-12 transition-all', {

@@ -17,12 +17,12 @@ export default function DashboardPage() {
     return null;
   }
 
-  const clusters = clustersData?.items || [];
+  const clusters = clustersData?.data || [];
   const totalClusters = clusters.length;
 
   // Calculate stats - in a real app, these would come from separate API calls
   const totalProjects = clusters.reduce((acc, cluster) => acc + (cluster.node_count || 0), 0);
-  const totalWorkloads = clusters.filter(c => c.status === 'healthy').length;
+  const totalWorkloads = clusters.filter(c => c.status === 'connected').length;
 
   return (
     <div className="container mx-auto py-8 space-y-8">
@@ -50,7 +50,7 @@ export default function DashboardPage() {
           <CardContent>
             <div className="text-2xl font-bold">{totalClusters}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              {clusters.filter(c => c.status === 'healthy').length} healthy
+              {clusters.filter(c => c.status === 'connected').length} connected
             </p>
           </CardContent>
         </Card>

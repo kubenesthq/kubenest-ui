@@ -1,12 +1,12 @@
-// API Type definitions
-// These will be replaced by generated types from kubenest-contracts when available
+// API Type definitions matching backend OpenAPI schema
 
 // User types
 export interface User {
-  id: string;
+  id: number;
   email: string;
   name: string;
-  created_at: string;
+  profile_image_url: string;
+  tier_id: number | null;
 }
 
 export interface LoginRequest {
@@ -21,29 +21,32 @@ export interface RegisterRequest {
 }
 
 export interface AuthResponse {
-  token: string;
-  user: User;
+  access_token: string;
+  token_type: string;
 }
 
 // Cluster types
+export type ClusterStatus = 'pending' | 'connected' | 'disconnected' | 'error';
+
 export interface Cluster {
   id: string;
   name: string;
-  display_name?: string;
-  description?: string;
-  status: 'healthy' | 'degraded' | 'offline';
-  operator_version?: string;
-  kubernetes_version?: string;
-  node_count?: number;
-  version?: string;
-  last_heartbeat?: string;
+  description: string | null;
+  status: ClusterStatus;
+  kubernetes_version: string | null;
+  node_count: number | null;
+  last_heartbeat: string | null;
+  registered_at: string;
   created_at: string;
-  updated_at?: string;
+}
+
+export interface ClusterCreateResponse extends Cluster {
+  connection_token: string;
+  install_command: string;
 }
 
 export interface CreateClusterRequest {
   name: string;
-  display_name?: string;
   description?: string;
 }
 
@@ -52,39 +55,79 @@ export interface Project {
   id: string;
   cluster_id: string;
   name: string;
-  display_name: string;
-  namespace?: string;
-  phase: 'Pending' | 'Ready' | 'Failed';
-  status?: 'pending' | 'creating' | 'active' | 'failed';
-  description?: string;
+  namespace: string;
+  display_name: string | null;
+  description: string | null;
+  registry_secret: string | null;
+  guardrails_config: Record<string, unknown> | null;
+  status: string;
   created_at: string;
-  updated_at?: string;
+  updated_at: string | null;
 }
 
 export interface CreateProjectRequest {
   name: string;
   cluster_id: string;
   description?: string;
+  display_name?: string;
+  registry_secret?: string;
+  guardrails_config?: Record<string, unknown>;
 }
 
 // Workload types
+export type WorkloadPhase = 'pending' | 'building' | 'deploying' | 'running' | 'degraded' | 'failed';
+export type WorkloadType = 'deployment' | 'statefulset';
+
 export interface Workload {
   id: string;
   project_id: string;
   name: string;
-  image: string;
+  type: WorkloadType;
+  image: string | null;
+  git_source: string | null;
   replicas: number;
-  port?: number;
-  phase: 'Pending' | 'Deploying' | 'Running' | 'Failed' | 'Degraded';
+  ready_replicas: number;
+  port: number | null;
+  phase: WorkloadPhase;
+  build_config: Record<string, unknown> | null;
+  exports: Record<string, unknown> | null;
+  url: string | null;
+  deployed_at: string | null;
   created_at: string;
-  updated_at: string;
+  updated_at: string | null;
 }
 
 export interface CreateWorkloadRequest {
   name: string;
-  image: string;
-  replicas: number;
+  project_id: string;
+  image?: string;
+  git_source?: string;
+  type?: WorkloadType;
+  replicas?: number;
   port?: number;
+  build_config?: Record<string, unknown>;
+}
+
+export interface WorkloadUpdateRequest {
+  name?: string;
+  image?: string;
+  git_source?: string;
+  replicas?: number;
+  port?: number;
+  build_config?: Record<string, unknown>;
+}
+
+export interface ScaleRequest {
+  replicas: number;
+}
+
+// Pagination types (matches backend PaginatedListResponse)
+export interface PaginatedResponse<T> {
+  data: T[];
+  total_count: number;
+  has_more: boolean;
+  page: number | null;
+  items_per_page: number | null;
 }
 
 // Error types
@@ -94,46 +137,29 @@ export interface ApiError {
   details?: unknown;
 }
 
-// API Response types
-export interface ClusterListResponse {
-  items: Cluster[];
-  total: number;
-  page: number;
-  page_size: number;
-}
-
-export interface ClusterResponse {
-  data: Cluster;
-}
-
-export interface ProjectListResponse {
-  items: Project[];
-  total: number;
-  page: number;
-  page_size: number;
-}
-
-export interface ProjectResponse {
-  data: Project;
-}
+// Specific paginated response types
+export type ClusterListResponse = PaginatedResponse<Cluster>;
+export type ProjectListResponse = PaginatedResponse<Project>;
+export type WorkloadListResponse = PaginatedResponse<Workload>;
 
 // Type aliases for compatibility
 export type ClusterCreateRequest = CreateClusterRequest;
 export type ProjectCreateRequest = CreateProjectRequest;
 export type WorkloadCreateRequest = CreateWorkloadRequest;
 
-// Utility types
-export type ClusterStatus = 'healthy' | 'degraded' | 'offline';
+// Connection status derived from cluster status
 export type ConnectionStatus = 'connected' | 'disconnected' | 'pending';
 
 // Helper to determine connection status from cluster data
 export function getConnectionStatus(cluster: Cluster): ConnectionStatus {
-  if (!cluster.last_heartbeat) return 'pending';
-
-  const lastHeartbeat = new Date(cluster.last_heartbeat);
-  const now = new Date();
-  const minutesSinceHeartbeat = (now.getTime() - lastHeartbeat.getTime()) / 1000 / 60;
-
-  if (minutesSinceHeartbeat > 5) return 'disconnected';
-  return 'connected';
+  switch (cluster.status) {
+    case 'connected':
+      return 'connected';
+    case 'disconnected':
+    case 'error':
+      return 'disconnected';
+    case 'pending':
+    default:
+      return 'pending';
+  }
 }
