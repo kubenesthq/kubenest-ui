@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { useAuthStore } from '@/store/auth';
-import { useSSE } from '@/hooks/useSSE';
 import { EventToast } from '@/components/notifications/EventToast';
 
 interface SSEProviderProps {
@@ -19,23 +18,11 @@ interface SSEProviderProps {
 export function SSEProvider({ children }: SSEProviderProps) {
   const { isAuthenticated, token } = useAuthStore();
 
-  // Use the existing useSSE hook with optional filters
-  // Pass undefined for filters to subscribe to all events
-  const { connected, error, reconnecting } = useSSE(
-    undefined, // No filters - subscribe to all events
-    isAuthenticated // Only connect when authenticated
-  );
-
-  // Log connection status changes
-  useEffect(() => {
-    if (isAuthenticated) {
-      console.log('[SSEProvider] SSE connection status:', {
-        connected,
-        error,
-        reconnecting,
-      });
-    }
-  }, [connected, error, reconnecting, isAuthenticated]);
+  // SSE disabled — backend SSE endpoint not yet stable
+  // const { connected, error, reconnecting } = useSSE(
+  //   undefined,
+  //   isAuthenticated
+  // );
 
   return (
     <>

@@ -9,7 +9,7 @@ import type {
 export const workloadsApi = {
   // List all workloads for a project
   list: (projectId: string) =>
-    apiClient.get<WorkloadListResponse>(`/projects/${projectId}/workloads`),
+    apiClient.get<WorkloadListResponse>(`/workloads?project_id=${projectId}`),
 
   // Get single workload
   get: (workloadId: string) =>

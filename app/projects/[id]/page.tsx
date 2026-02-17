@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import Link from 'next/link';
+import { ArrowLeft } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -88,6 +89,14 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="container mx-auto py-8 space-y-6">
+      {cluster && (
+        <Button variant="ghost" size="sm" asChild>
+          <Link href={`/clusters/${cluster.id}`}>
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            {cluster.name}
+          </Link>
+        </Button>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-3">

@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -12,6 +13,7 @@ interface WorkloadListProps {
 }
 
 export function WorkloadList({ projectId }: WorkloadListProps) {
+  const router = useRouter();
   const { data, isLoading, error } = useWorkloads(projectId);
 
   if (isLoading) {
@@ -58,14 +60,13 @@ export function WorkloadList({ projectId }: WorkloadListProps) {
       </TableHeader>
       <TableBody>
         {workloads.map((workload: Workload) => (
-          <TableRow key={workload.id}>
+          <TableRow
+            key={workload.id}
+            className="cursor-pointer hover:bg-muted/50"
+            onClick={() => router.push(`/workloads/${workload.id}`)}
+          >
             <TableCell className="font-medium">
-              <Link
-                href={`/workloads/${workload.id}`}
-                className="hover:underline"
-              >
-                {workload.name}
-              </Link>
+              {workload.name}
             </TableCell>
             <TableCell>
               <code className="text-xs bg-muted px-2 py-1 rounded">
@@ -80,13 +81,14 @@ export function WorkloadList({ projectId }: WorkloadListProps) {
             </TableCell>
             <TableCell className="text-right">
               <Button
-                asChild
                 variant="outline"
                 size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  router.push(`/workloads/${workload.id}`);
+                }}
               >
-                <Link href={`/workloads/${workload.id}`}>
-                  View
-                </Link>
+                View
               </Button>
             </TableCell>
           </TableRow>

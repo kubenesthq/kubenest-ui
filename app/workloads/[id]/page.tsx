@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import Link from 'next/link';
-import { ExternalLink, Minus, Plus } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Minus, Plus } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,7 +21,6 @@ import {
 } from '@/components/ui/dialog';
 import { useWorkload, useScaleWorkload, useDeleteWorkload } from '@/hooks/useWorkloads';
 import { getProject } from '@/api/projects';
-import { useSSE, WorkloadStatusEvent } from '@/hooks/useSSE';
 import { WORKLOAD_LIMITS } from '@/lib/constants/workloads';
 
 export default function WorkloadDetailPage() {
@@ -37,11 +36,9 @@ export default function WorkloadDetailPage() {
   // Fetch workload data
   const { data: workload, isLoading: workloadLoading } = useWorkload(workloadId);
 
-  // Real-time SSE connection for this workload
-  const { lastEvent, connected, reconnecting } = useSSE({
-    workload_id: workloadId,
-    resource_type: 'workload',
-  });
+  // SSE disabled — backend SSE endpoint not yet stable
+  const connected = false;
+  const reconnecting = false;
 
   // Set initial replica count when workload loads
   useEffect(() => {
@@ -49,27 +46,6 @@ export default function WorkloadDetailPage() {
       setDesiredReplicas(workload.replicas);
     }
   }, [workload]);
-
-  // Handle real-time workload status updates
-  useEffect(() => {
-    if (lastEvent && lastEvent.event_type === 'workload_status_update') {
-      const statusEvent = lastEvent as WorkloadStatusEvent;
-
-      // Only process events for this specific workload
-      if (statusEvent.workload_id === workloadId) {
-        // Invalidate the workload query to refetch fresh data
-        queryClient.invalidateQueries({ queryKey: ['workload', workloadId] });
-
-        // Log status change for debugging
-        console.log(`[SSE] Workload ${workloadId} status updated:`, {
-          status: statusEvent.status,
-          message: statusEvent.message,
-          replicas: statusEvent.replicas,
-          available_replicas: statusEvent.available_replicas,
-        });
-      }
-    }
-  }, [lastEvent, workloadId, queryClient]);
 
   // Fetch parent project data
   const { data: projectData } = useQuery({
@@ -150,6 +126,14 @@ export default function WorkloadDetailPage() {
 
   return (
     <div className="container mx-auto py-8 space-y-6">
+      {project && (
+        <Button variant="ghost" size="sm" asChild>
+          <Link href={`/projects/${project.id}`}>
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            {project.name}
+          </Link>
+        </Button>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
