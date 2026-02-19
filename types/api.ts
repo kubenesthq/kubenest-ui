@@ -158,10 +158,77 @@ export interface ApiError {
   details?: unknown;
 }
 
+// Addon types
+export type AddonType = 'postgres' | 'redis' | 'kafka' | 'mongodb' | 'mysql' | 'rabbitmq' | 'custom';
+export type AddonPhase = 'Pending' | 'Deploying' | 'Running' | 'Degraded' | 'Failed';
+
+export interface AddonDefinition {
+  id: string;
+  cluster_id: string | null;
+  name: string;
+  slug: string;
+  description: string | null;
+  icon: string;
+  tags: string[] | null;
+  type: AddonType;
+  chart_config: ChartSpec | null;
+  default_values: Record<string, unknown> | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface AddonDefinitionCreate {
+  name: string;
+  slug: string;
+  type: AddonType;
+  cluster_id?: string;
+  description?: string;
+  icon?: string;
+  tags?: string[];
+  chart_config?: ChartSpec;
+  default_values?: Record<string, unknown>;
+}
+
+export interface AddonDefinitionUpdate {
+  name?: string;
+  description?: string;
+  icon?: string;
+  tags?: string[];
+  chart_config?: ChartSpec;
+  default_values?: Record<string, unknown>;
+  is_active?: boolean;
+}
+
+export interface AddonInstance {
+  id: string;
+  definition_id: string | null;
+  project_id: string;
+  name: string;
+  type: AddonType;
+  chart_config: Record<string, unknown> | null;
+  phase: AddonPhase;
+  exports: Record<string, string> | null;
+  deployed_at: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface AddonInstanceCreate {
+  project_id: string;
+  name: string;
+  definition_id?: string;
+  type?: AddonType;
+  chart?: ChartSpec;
+  values?: Record<string, unknown>;
+}
+
 // Specific paginated response types
 export type ClusterListResponse = PaginatedResponse<Cluster>;
 export type ProjectListResponse = PaginatedResponse<Project>;
 export type WorkloadListResponse = PaginatedResponse<Workload>;
+export type AddonDefinitionListResponse = PaginatedResponse<AddonDefinition>;
+export type AddonInstanceListResponse = PaginatedResponse<AddonInstance>;
 
 // Type aliases for compatibility
 export type ClusterCreateRequest = CreateClusterRequest;

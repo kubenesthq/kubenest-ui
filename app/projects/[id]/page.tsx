@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ProjectStatusBadge } from '@/components/projects/ProjectStatusBadge';
 import { WorkloadList } from '@/components/workloads/WorkloadList';
+import { AddonInstanceList } from '@/components/addons/AddonInstanceList';
 import {
   Dialog,
   DialogContent,
@@ -185,13 +186,40 @@ export default function ProjectDetailPage() {
         </Card>
       </motion.div>
 
+      {/* Addons */}
+      <motion.div
+        variants={fadeInUp}
+        initial="initial"
+        animate="animate"
+        transition={{ duration: 0.4, delay: 0.22, ease: easeOutQuart }}
+      >
+        <Card className="border-zinc-200">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base font-semibold text-zinc-900">Addons</CardTitle>
+                <p className="text-sm text-zinc-500 mt-0.5">
+                  Managed backing services (databases, queues, caches)
+                </p>
+              </div>
+              <Button asChild size="sm" variant="outline">
+                <Link href={`/projects/${project.id}/addons/new`}>Add Addon</Link>
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <AddonInstanceList projectId={project.id} />
+          </CardContent>
+        </Card>
+      </motion.div>
+
       {/* Metadata + Events */}
       <div className="grid gap-6 md:grid-cols-2">
         <motion.div
           variants={fadeInUp}
           initial="initial"
           animate="animate"
-          transition={{ duration: 0.4, delay: 0.22, ease: easeOutQuart }}
+          transition={{ duration: 0.4, delay: 0.3, ease: easeOutQuart }}
         >
           <Card className="border-zinc-200">
             <CardHeader className="pb-3">
@@ -250,7 +278,7 @@ export default function ProjectDetailPage() {
           variants={fadeInUp}
           initial="initial"
           animate="animate"
-          transition={{ duration: 0.4, delay: 0.28, ease: easeOutQuart }}
+          transition={{ duration: 0.4, delay: 0.36, ease: easeOutQuart }}
         >
           <Card className="border-zinc-200">
             <CardHeader className="pb-3">

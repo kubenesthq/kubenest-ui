@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Server, Plus, LogOut } from 'lucide-react';
+import { LayoutDashboard, Server, Plus, LogOut, Package } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { cn } from '@/lib/utils';
 
@@ -83,6 +83,29 @@ export function AppSidebar() {
             )}
           />
           Register Cluster
+        </Link>
+
+        {/* Admin section */}
+        <div className="pt-4 pb-1 px-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-zinc-300">Admin</p>
+        </div>
+
+        <Link
+          href="/admin/addon-definitions"
+          className={cn(
+            'flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors',
+            pathname.startsWith('/admin/addon-definitions')
+              ? 'bg-blue-50 text-blue-700 font-medium'
+              : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900'
+          )}
+        >
+          <Package
+            className={cn(
+              'h-4 w-4 shrink-0',
+              pathname.startsWith('/admin/addon-definitions') ? 'text-blue-600' : 'text-zinc-400'
+            )}
+          />
+          Addon Catalog
         </Link>
       </nav>
 
