@@ -2,6 +2,7 @@
 
 import { type ReactNode } from 'react';
 import { useAuthStore } from '@/store/auth';
+import { useSSE } from '@/hooks/useSSE';
 import { EventToast } from '@/components/notifications/EventToast';
 
 interface SSEProviderProps {
@@ -16,13 +17,12 @@ interface SSEProviderProps {
  * - Stores all events in useSSE hook
  */
 export function SSEProvider({ children }: SSEProviderProps) {
-  const { isAuthenticated, token } = useAuthStore();
+  const { isAuthenticated } = useAuthStore();
 
-  // SSE disabled — backend SSE endpoint not yet stable
-  // const { connected, error, reconnecting } = useSSE(
-  //   undefined,
-  //   isAuthenticated
-  // );
+  const { connected, error, reconnecting } = useSSE(
+    undefined,
+    isAuthenticated
+  );
 
   return (
     <>

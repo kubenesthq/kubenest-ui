@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useWorkload, useScaleWorkload, useDeleteWorkload } from '@/hooks/useWorkloads';
+import { useSSE } from '@/hooks/useSSE';
 import { getProject } from '@/api/projects';
 import { WORKLOAD_LIMITS } from '@/lib/constants/workloads';
 
@@ -40,9 +41,10 @@ export default function WorkloadDetailPage() {
   const [isScaling, setIsScaling] = useState(false);
   const [showHelmValues, setShowHelmValues] = useState(false);
 
-  // SSE disabled — backend SSE endpoint not yet stable
-  const connected = false;
-  const reconnecting = false;
+  const { connected, reconnecting } = useSSE(
+    { resource_type: 'workload', workload_id: workloadId },
+    !!workloadId
+  );
 
   const { data: workload, isLoading: workloadLoading } = useWorkload(workloadId);
 

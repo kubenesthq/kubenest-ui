@@ -8,6 +8,7 @@ export type SSEEventType =
   | 'connected'
   | 'heartbeat'
   | 'workload_status_update'
+  | 'addon_status_update'
   | 'project_status_update'
   | 'cluster_status_update'
   | 'build_complete'
@@ -233,6 +234,12 @@ export function useSSE(filters?: SSEFilters, enabled: boolean = true): UseSSERet
       // Handle 'workload_status_update' event
       eventSource.addEventListener('workload_status_update', (e) => {
         const data = JSON.parse(e.data) as WorkloadStatusEvent;
+        addEvent(data);
+      });
+
+      // Handle 'addon_status_update' event
+      eventSource.addEventListener('addon_status_update', (e) => {
+        const data = JSON.parse(e.data) as SSEEvent;
         addEvent(data);
       });
 
