@@ -60,13 +60,13 @@ export function ClusterList() {
     <div className="rounded-lg border">
       <Table>
         <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Description</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Connection</TableHead>
-            <TableHead>Nodes</TableHead>
-            <TableHead>Version</TableHead>
+          <TableRow className="bg-zinc-50/60">
+            <TableHead className="text-xs font-medium uppercase tracking-wide text-zinc-400">Name</TableHead>
+            <TableHead className="text-xs font-medium uppercase tracking-wide text-zinc-400">Description</TableHead>
+            <TableHead className="text-xs font-medium uppercase tracking-wide text-zinc-400">Status</TableHead>
+            <TableHead className="text-xs font-medium uppercase tracking-wide text-zinc-400">Connection</TableHead>
+            <TableHead className="text-xs font-medium uppercase tracking-wide text-zinc-400">Nodes</TableHead>
+            <TableHead className="text-xs font-medium uppercase tracking-wide text-zinc-400">Version</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
