@@ -2,7 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Server } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -26,20 +28,13 @@ export default function LoginPage() {
 
     try {
       const tokenResponse = await login({ email, password });
-
-      // Store the access token (refresh token is set as HTTP-only cookie by backend)
       localStorage.setItem('token', tokenResponse.access_token);
-
-      // Get user info
       const user = await getCurrentUser();
-
-      // Update auth store
       authLogin(tokenResponse.access_token, {
         id: String(user.id),
         email: user.email,
         name: user.name,
       });
-
       router.push('/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
@@ -49,60 +44,77 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Login to Kubenest</CardTitle>
-          <CardDescription>
-            Enter your credentials to access your clusters
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {justRegistered && (
-              <div className="rounded-md bg-green-50 p-3 text-sm text-green-600">
-                Account created successfully! Please log in.
+    <div className="flex min-h-screen items-center justify-center bg-zinc-50">
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.25, 1, 0.5, 1] }}
+        className="w-full max-w-sm"
+      >
+        {/* Brand */}
+        <div className="flex flex-col items-center mb-8">
+          <div className="h-10 w-10 rounded-xl bg-blue-600 flex items-center justify-center mb-4">
+            <Server className="h-5 w-5 text-white" />
+          </div>
+          <h1 className="text-xl font-semibold tracking-tight text-zinc-900">KubeNest</h1>
+          <p className="text-sm text-zinc-500 mt-1">Sign in to your account</p>
+        </div>
+
+        <Card className="border-zinc-200 shadow-sm">
+          <CardContent className="pt-6">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {justRegistered && (
+                <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-700">
+                  Account created successfully. Please sign in.
+                </div>
+              )}
+              {error && (
+                <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-600">
+                  {error}
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <Label htmlFor="email" className="text-xs font-medium text-zinc-600">
+                  Email
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="border-zinc-200"
+                />
               </div>
-            )}
-            {error && (
-              <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">
-                {error}
+              <div className="space-y-1.5">
+                <Label htmlFor="password" className="text-xs font-medium text-zinc-600">
+                  Password
+                </Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="border-zinc-200"
+                />
               </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? 'Signing in...' : 'Sign In'}
-            </Button>
-            <p className="text-center text-sm text-muted-foreground">
-              Don&apos;t have an account?{' '}
-              <a href="/register" className="text-primary hover:underline">
-                Register
-              </a>
-            </p>
-          </form>
-        </CardContent>
-      </Card>
+              <Button type="submit" className="w-full mt-2" disabled={isLoading}>
+                {isLoading ? 'Signing in...' : 'Sign In'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <p className="text-center text-sm text-zinc-400 mt-6">
+          Don&apos;t have an account?{' '}
+          <a href="/register" className="text-blue-600 hover:underline">
+            Register
+          </a>
+        </p>
+      </motion.div>
     </div>
   );
 }
