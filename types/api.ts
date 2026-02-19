@@ -38,6 +38,8 @@ export interface Cluster {
   last_heartbeat: string | null;
   registered_at: string;
   created_at: string;
+  base_domain: string | null;
+  enterprise_domain: string | null;
 }
 
 export interface ClusterCreateResponse extends Cluster {

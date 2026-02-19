@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useCreateWorkload } from '@/hooks/useWorkloads';
 import { getProject } from '@/api/projects';
+import { getCluster } from '@/api/clusters';
 import { WORKLOAD_LIMITS } from '@/lib/constants/workloads';
 import type { CreateWorkloadRequest } from '@/types/api';
 
@@ -40,15 +41,12 @@ const ingressSchema = z.object({
   path: z.string().regex(/^\//, 'Path must start with /'),
   tls_secret: z.string().optional().nullable(),
   annotations: z.array(annotationSchema).optional(),
-}).refine(
-  (data) => !data.enabled || (data.host && data.host.length > 0),
-  { message: 'Host is required when ingress is enabled', path: ['host'] }
-);
+});
 
 const chartSpecSchema = z.object({
-  repo: z.string().url('Must be a valid URL'),
-  name: z.string().min(1, 'Chart name is required'),
-  version: z.string().min(1, 'Version is required'),
+  repo: z.string(),
+  name: z.string(),
+  version: z.string(),
 });
 
 const workloadSchema = z.object({
@@ -89,6 +87,12 @@ export default function NewWorkloadPage() {
     queryFn: () => getProject(projectId),
   });
 
+  const { data: cluster } = useQuery({
+    queryKey: ['cluster', project?.cluster_id],
+    queryFn: () => getCluster(project!.cluster_id),
+    enabled: !!project?.cluster_id,
+  });
+
   const {
     register,
     handleSubmit,
@@ -125,6 +129,10 @@ export default function NewWorkloadPage() {
   });
 
   const ingressEnabled = watch('ingress.enabled');
+  const workloadName = watch('name');
+  const autoHostname = (workloadName && project?.namespace && cluster?.base_domain)
+    ? `${workloadName}.${project.namespace}.${cluster.base_domain}`
+    : null;
 
   const createWorkloadMutation = useCreateWorkload(projectId);
 
@@ -444,8 +452,7 @@ export default function NewWorkloadPage() {
                   max={WORKLOAD_LIMITS.MAX_PORT}
                   placeholder="8080"
                   {...register('port', {
-                    valueAsNumber: true,
-                    setValueAs: (v) => v === '' || isNaN(v) ? undefined : Number(v)
+                    setValueAs: (v) => (v === '' || v === null || v === undefined) ? undefined : Number(v)
                   })}
                   disabled={isSubmitting}
                 />
@@ -492,11 +499,11 @@ export default function NewWorkloadPage() {
                       <div className="space-y-4 pl-6">
                         <div className="space-y-2">
                           <Label htmlFor="ingress-host">
-                            Host <span className="text-destructive">*</span>
+                            Host <span className="text-zinc-400 font-normal">(optional)</span>
                           </Label>
                           <Input
                             id="ingress-host"
-                            placeholder="app.example.com"
+                            placeholder={autoHostname ?? 'app.example.com'}
                             {...register('ingress.host')}
                             disabled={isSubmitting}
                           />
@@ -504,7 +511,9 @@ export default function NewWorkloadPage() {
                             <p className="text-sm text-destructive">{errors.ingress.host.message}</p>
                           )}
                           <p className="text-xs text-muted-foreground">
-                            Hostname for the ingress rule
+                            {autoHostname
+                              ? <>Leave blank to auto-generate: <span className="font-mono">{autoHostname}</span></>
+                              : 'Leave blank to auto-generate from cluster base domain'}
                           </p>
                         </div>
 
