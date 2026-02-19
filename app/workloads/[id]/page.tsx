@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import Link from 'next/link';
-import { ArrowLeft, ExternalLink, Minus, Plus, Loader2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, Minus, Plus, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,7 @@ export default function WorkloadDetailPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [desiredReplicas, setDesiredReplicas] = useState<number>(1);
   const [isScaling, setIsScaling] = useState(false);
+  const [showHelmValues, setShowHelmValues] = useState(false);
 
   // SSE disabled — backend SSE endpoint not yet stable
   const connected = false;
@@ -232,14 +233,24 @@ export default function WorkloadDetailPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               {[
-                {
-                  label: 'Image',
-                  value: (
-                    <code className="text-xs bg-zinc-100 text-zinc-700 px-2 py-1 rounded font-mono block truncate">
-                      {workload.image}
-                    </code>
-                  ),
-                },
+                workload.chart_config?.chart
+                  ? {
+                      label: 'Helm Chart',
+                      value: (
+                        <code className="text-xs bg-zinc-100 text-zinc-700 px-2 py-1 rounded font-mono block truncate">
+                          {workload.chart_config.chart.name}@{workload.chart_config.chart.version}
+                          <span className="text-zinc-400 ml-1">({workload.chart_config.chart.repo})</span>
+                        </code>
+                      ),
+                    }
+                  : {
+                      label: 'Image',
+                      value: (
+                        <code className="text-xs bg-zinc-100 text-zinc-700 px-2 py-1 rounded font-mono block truncate">
+                          {workload.image}
+                        </code>
+                      ),
+                    },
                 {
                   label: 'Port',
                   value: (
@@ -449,6 +460,38 @@ export default function WorkloadDetailPage() {
                   </div>
                 )}
             </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Helm Values */}
+      {workload.chart_config?.values && Object.keys(workload.chart_config.values).length > 0 && (
+        <motion.div
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          transition={{ duration: 0.4, delay: 0.30, ease: easeOutQuart }}
+        >
+          <Card className="border-zinc-200">
+            <button
+              type="button"
+              className="flex items-center justify-between w-full px-6 py-4 text-left"
+              onClick={() => setShowHelmValues(!showHelmValues)}
+            >
+              <CardTitle className="text-base font-semibold text-zinc-900">Helm Values</CardTitle>
+              {showHelmValues ? (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              )}
+            </button>
+            {showHelmValues && (
+              <CardContent className="pt-0">
+                <pre className="bg-zinc-50 border border-zinc-100 rounded-md p-3 text-xs font-mono text-zinc-700 overflow-x-auto">
+                  {JSON.stringify(workload.chart_config.values, null, 2)}
+                </pre>
+              </CardContent>
+            )}
           </Card>
         </motion.div>
       )}

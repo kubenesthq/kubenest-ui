@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { useCreateWorkload } from '@/hooks/useWorkloads';
 import { getProject } from '@/api/projects';
 import { WORKLOAD_LIMITS } from '@/lib/constants/workloads';
@@ -25,6 +26,7 @@ const fadeInUp = {
 
 const easeOutQuart = [0.25, 1, 0.5, 1] as const;
 
+type DeployMode = 'image' | 'chart';
 type WorkloadFormPayload = Omit<CreateWorkloadRequest, 'project_id'>;
 
 const annotationSchema = z.object({
@@ -43,13 +45,18 @@ const ingressSchema = z.object({
   { message: 'Host is required when ingress is enabled', path: ['host'] }
 );
 
-// Validation schema matching the requirements
+const chartSpecSchema = z.object({
+  repo: z.string().url('Must be a valid URL'),
+  name: z.string().min(1, 'Chart name is required'),
+  version: z.string().min(1, 'Version is required'),
+});
+
 const workloadSchema = z.object({
   name: z
     .string()
     .min(1, 'Name is required')
     .regex(/^[a-z0-9-]+$/, 'Name must be lowercase alphanumeric with dashes only'),
-  image: z.string().min(1, 'Container image is required'),
+  image: z.string().optional(),
   replicas: z
     .number()
     .int('Replicas must be an integer')
@@ -63,6 +70,8 @@ const workloadSchema = z.object({
     .optional()
     .nullable(),
   ingress: ingressSchema.optional(),
+  chart: chartSpecSchema.optional(),
+  valuesYaml: z.string().optional(),
 });
 
 type WorkloadFormData = z.infer<typeof workloadSchema>;
@@ -72,6 +81,8 @@ export default function NewWorkloadPage() {
   const params = useParams();
   const projectId = params.id as string;
   const [showIngress, setShowIngress] = useState(false);
+  const [showHelmValues, setShowHelmValues] = useState(false);
+  const [deployMode, setDeployMode] = useState<DeployMode>('image');
 
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
@@ -99,6 +110,12 @@ export default function NewWorkloadPage() {
         tls_secret: '',
         annotations: [],
       },
+      chart: {
+        repo: '',
+        name: '',
+        version: '',
+      },
+      valuesYaml: '',
     },
   });
 
@@ -112,12 +129,45 @@ export default function NewWorkloadPage() {
   const createWorkloadMutation = useCreateWorkload(projectId);
 
   const onSubmit = async (data: WorkloadFormData) => {
+    // Cross-validate based on deploy mode
+    if (deployMode === 'image' && !data.image) {
+      setError('image', { message: 'Container image is required' });
+      return;
+    }
+    if (deployMode === 'chart') {
+      if (!data.chart?.repo) {
+        setError('chart.repo', { message: 'Repo URL is required' });
+        return;
+      }
+      if (!data.chart?.name) {
+        setError('chart.name', { message: 'Chart name is required' });
+        return;
+      }
+      if (!data.chart?.version) {
+        setError('chart.version', { message: 'Version is required' });
+        return;
+      }
+    }
+
     try {
       const payload: WorkloadFormPayload = {
         name: data.name,
-        image: data.image,
         replicas: data.replicas,
       };
+
+      if (deployMode === 'image') {
+        payload.image = data.image;
+      } else {
+        payload.chart = data.chart;
+        if (data.valuesYaml?.trim()) {
+          try {
+            payload.values = JSON.parse(data.valuesYaml);
+          } catch {
+            setError('valuesYaml', { message: 'Invalid JSON — must be a valid JSON object' });
+            return;
+          }
+        }
+      }
 
       if (data.port) {
         payload.port = data.port;
@@ -198,11 +248,40 @@ export default function NewWorkloadPage() {
           <CardHeader>
             <CardTitle>Workload Configuration</CardTitle>
             <CardDescription>
-              Configure your workload with a container image and deployment settings
+              Configure your workload with a container image or Helm chart and deployment settings
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+              {/* Deploy Mode Toggle */}
+              <div className="space-y-2">
+                <Label>Deploy Mode</Label>
+                <div className="flex rounded-lg border border-zinc-200 overflow-hidden">
+                  <button
+                    type="button"
+                    className={`flex-1 py-2 px-4 text-sm font-medium transition-colors ${
+                      deployMode === 'image'
+                        ? 'bg-zinc-900 text-white'
+                        : 'bg-white text-zinc-600 hover:bg-zinc-50'
+                    }`}
+                    onClick={() => setDeployMode('image')}
+                  >
+                    Image
+                  </button>
+                  <button
+                    type="button"
+                    className={`flex-1 py-2 px-4 text-sm font-medium transition-colors border-l border-zinc-200 ${
+                      deployMode === 'chart'
+                        ? 'bg-zinc-900 text-white'
+                        : 'bg-white text-zinc-600 hover:bg-zinc-50'
+                    }`}
+                    onClick={() => setDeployMode('chart')}
+                  >
+                    Helm Chart
+                  </button>
+                </div>
+              </div>
+
               {/* Name Field */}
               <div className="space-y-2">
                 <Label htmlFor="name">
@@ -222,24 +301,117 @@ export default function NewWorkloadPage() {
                 </p>
               </div>
 
-              {/* Image Field */}
-              <div className="space-y-2">
-                <Label htmlFor="image">
-                  Container Image <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="image"
-                  placeholder="nginx:1.21"
-                  {...register('image')}
-                  disabled={isSubmitting}
-                />
-                {errors.image && (
-                  <p className="text-sm text-destructive">{errors.image.message}</p>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  Docker image name with optional tag (e.g., nginx:latest)
-                </p>
-              </div>
+              {/* Image Field — shown in image mode */}
+              {deployMode === 'image' && (
+                <div className="space-y-2">
+                  <Label htmlFor="image">
+                    Container Image <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="image"
+                    placeholder="nginx:1.21"
+                    {...register('image')}
+                    disabled={isSubmitting}
+                  />
+                  {errors.image && (
+                    <p className="text-sm text-destructive">{errors.image.message}</p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Docker image name with optional tag (e.g., nginx:latest)
+                  </p>
+                </div>
+              )}
+
+              {/* Helm Chart Fields — shown in chart mode */}
+              {deployMode === 'chart' && (
+                <div className="space-y-4 rounded-lg border border-zinc-200 p-4">
+                  <p className="text-sm font-medium text-zinc-900">Helm Chart Source</p>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="chart-repo">
+                      Repository URL <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="chart-repo"
+                      placeholder="https://charts.bitnami.com/bitnami"
+                      {...register('chart.repo')}
+                      disabled={isSubmitting}
+                    />
+                    {errors.chart?.repo && (
+                      <p className="text-sm text-destructive">{errors.chart.repo.message}</p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="chart-name">
+                        Chart Name <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="chart-name"
+                        placeholder="postgresql"
+                        {...register('chart.name')}
+                        disabled={isSubmitting}
+                      />
+                      {errors.chart?.name && (
+                        <p className="text-sm text-destructive">{errors.chart.name.message}</p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="chart-version">
+                        Version <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="chart-version"
+                        placeholder="12.1.2"
+                        {...register('chart.version')}
+                        disabled={isSubmitting}
+                      />
+                      {errors.chart?.version && (
+                        <p className="text-sm text-destructive">{errors.chart.version.message}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Helm Values — collapsible */}
+                  <div className="border border-zinc-200 rounded-lg">
+                    <button
+                      type="button"
+                      className="flex items-center justify-between w-full p-3 text-left"
+                      onClick={() => setShowHelmValues(!showHelmValues)}
+                    >
+                      <div>
+                        <span className="text-sm font-medium">Helm Values</span>
+                        <span className="text-xs text-muted-foreground ml-2">(Optional)</span>
+                      </div>
+                      {showHelmValues ? (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </button>
+
+                    {showHelmValues && (
+                      <div className="px-3 pb-3 space-y-2 border-t pt-3">
+                        <Textarea
+                          placeholder='{"replicaCount": 2, "service": {"type": "ClusterIP"}}'
+                          rows={6}
+                          className="font-mono text-xs"
+                          {...register('valuesYaml')}
+                          disabled={isSubmitting}
+                        />
+                        {errors.valuesYaml && (
+                          <p className="text-sm text-destructive">{errors.valuesYaml.message}</p>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          JSON object of Helm values to pass to the chart
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Replicas Field */}
               <div className="space-y-2">

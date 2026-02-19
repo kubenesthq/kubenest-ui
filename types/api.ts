@@ -87,6 +87,12 @@ export interface IngressConfig {
 export type WorkloadPhase = 'pending' | 'building' | 'deploying' | 'running' | 'degraded' | 'failed';
 export type WorkloadType = 'deployment' | 'statefulset';
 
+export interface ChartSpec {
+  repo: string;
+  name: string;
+  version: string;
+}
+
 export interface Workload {
   id: string;
   project_id: string;
@@ -105,6 +111,7 @@ export interface Workload {
   deployed_at: string | null;
   created_at: string;
   updated_at: string | null;
+  chart_config: { chart?: ChartSpec; values?: Record<string, unknown> } | null;
 }
 
 export interface CreateWorkloadRequest {
@@ -117,6 +124,8 @@ export interface CreateWorkloadRequest {
   port?: number;
   build_config?: Record<string, unknown>;
   ingress?: IngressConfig;
+  chart?: ChartSpec;
+  values?: Record<string, unknown>;
 }
 
 export interface WorkloadUpdateRequest {
