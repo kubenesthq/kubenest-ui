@@ -13,7 +13,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Form, FormField } from '@/components/ui/form';
-import { NamespacePreview } from '@/components/projects/NamespacePreview';
 import { getCluster } from '@/api/clusters';
 import { createProject } from '@/api/projects';
 
@@ -78,8 +77,6 @@ export default function NewProjectPage() {
       ...(data.registry_secret && { registry_secret: data.registry_secret }),
     });
   };
-
-  const projectName = form.watch('name');
 
   if (clusterLoading) {
     return (
@@ -197,8 +194,6 @@ export default function NewProjectPage() {
             </CardContent>
           </Card>
         </motion.div>
-
-        {projectName && <NamespacePreview projectName={projectName} />}
 
         <motion.div
           variants={fadeInUp}
