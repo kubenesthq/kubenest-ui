@@ -2,17 +2,28 @@
 
 import { useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import { ArrowLeft, ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useCreateWorkload } from '@/hooks/useWorkloads';
+import { getProject } from '@/api/projects';
 import { WORKLOAD_LIMITS } from '@/lib/constants/workloads';
 import type { CreateWorkloadRequest } from '@/types/api';
+
+const fadeInUp = {
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0 },
+};
+
+const easeOutQuart = [0.25, 1, 0.5, 1] as const;
 
 type WorkloadFormPayload = Omit<CreateWorkloadRequest, 'project_id'>;
 
@@ -61,6 +72,11 @@ export default function NewWorkloadPage() {
   const params = useParams();
   const projectId = params.id as string;
   const [showIngress, setShowIngress] = useState(false);
+
+  const { data: project } = useQuery({
+    queryKey: ['project', projectId],
+    queryFn: () => getProject(projectId),
+  });
 
   const {
     register,
@@ -137,16 +153,48 @@ export default function NewWorkloadPage() {
   };
 
   return (
-    <div className="container mx-auto py-8">
-      <div className="max-w-2xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold">Deploy New Workload</h1>
-          <p className="text-muted-foreground mt-2">
-            Deploy a containerized application to your project
-          </p>
-        </div>
+    <div className="px-8 py-8 max-w-2xl space-y-6">
+      {/* Breadcrumb */}
+      <motion.div
+        variants={fadeInUp}
+        initial="initial"
+        animate="animate"
+        transition={{ duration: 0.3, ease: easeOutQuart }}
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          asChild
+          className="h-7 px-2 text-zinc-400 hover:text-zinc-700 -ml-2"
+        >
+          <Link href={`/projects/${projectId}`}>
+            <ArrowLeft className="h-3.5 w-3.5 mr-1.5" />
+            {project?.name ?? 'Project'}
+          </Link>
+        </Button>
+      </motion.div>
 
-        <Card>
+      {/* Header */}
+      <motion.div
+        variants={fadeInUp}
+        initial="initial"
+        animate="animate"
+        transition={{ duration: 0.4, delay: 0.05, ease: easeOutQuart }}
+      >
+        <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Deploy New Workload</h1>
+        <p className="text-sm text-zinc-500 mt-1">
+          Deploy a containerized application to your project
+        </p>
+      </motion.div>
+
+      {/* Card */}
+      <motion.div
+        variants={fadeInUp}
+        initial="initial"
+        animate="animate"
+        transition={{ duration: 0.4, delay: 0.12, ease: easeOutQuart }}
+      >
+        <Card className="border-zinc-200">
           <CardHeader>
             <CardTitle>Workload Configuration</CardTitle>
             <CardDescription>
@@ -238,7 +286,7 @@ export default function NewWorkloadPage() {
               </div>
 
               {/* Ingress Section */}
-              <div className="border rounded-lg">
+              <div className="border border-zinc-200 rounded-lg">
                 <button
                   type="button"
                   className="flex items-center justify-between w-full p-4 text-left"
@@ -377,7 +425,7 @@ export default function NewWorkloadPage() {
 
               {/* Error Message */}
               {errors.root && (
-                <div className="rounded-md bg-destructive/15 p-3">
+                <div className="rounded-lg bg-red-50 border border-red-200 p-4">
                   <p className="text-sm text-destructive">{errors.root.message}</p>
                 </div>
               )}
@@ -387,7 +435,7 @@ export default function NewWorkloadPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => router.back()}
+                  onClick={() => router.push(`/projects/${projectId}`)}
                   disabled={isSubmitting}
                 >
                   Cancel
@@ -399,7 +447,7 @@ export default function NewWorkloadPage() {
             </form>
           </CardContent>
         </Card>
-      </div>
+      </motion.div>
     </div>
   );
 }
