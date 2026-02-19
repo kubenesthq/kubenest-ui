@@ -31,6 +31,7 @@ export function PhaseIndicator({ currentPhase, className }: PhaseIndicatorProps)
   const currentIndex = phaseOrder[normalizedPhase] ?? 0;
   const isFailed = normalizedPhase === 'failed';
   const isDegraded = normalizedPhase === 'degraded';
+  const isRunning = normalizedPhase === 'running';
 
   return (
     <div
@@ -43,8 +44,8 @@ export function PhaseIndicator({ currentPhase, className }: PhaseIndicatorProps)
       aria-valuetext={`Current phase: ${currentPhase}`}
     >
       {phases.map((phase, index) => {
-        const isCompleted = index < currentIndex || (isDegraded && index === currentIndex);
-        const isCurrent = index === currentIndex && !isFailed && !isDegraded;
+        const isCompleted = index < currentIndex || (isDegraded && index === currentIndex) || (isRunning && index === currentIndex);
+        const isCurrent = index === currentIndex && !isFailed && !isDegraded && !isRunning;
         const isPending = index > currentIndex;
 
         return (
