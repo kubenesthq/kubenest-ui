@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import {
   Table,
   TableBody,
@@ -14,6 +15,8 @@ import {
 import { ClusterStatusBadge } from './ClusterStatusBadge';
 import { clustersApi } from '@/lib/api/clusters';
 import { getConnectionStatus } from '@/types/api';
+
+const MotionTableRow = motion(TableRow);
 
 export function ClusterList() {
   const router = useRouter();
@@ -67,13 +70,21 @@ export function ClusterList() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {clusters.map((cluster) => {
+          {clusters.map((cluster, index) => {
             const connectionStatus = getConnectionStatus(cluster);
             return (
-              <TableRow
+              <MotionTableRow
                 key={cluster.id}
                 className="cursor-pointer"
                 onClick={() => router.push(`/clusters/${cluster.id}`)}
+                initial={{ opacity: 0, x: -8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{
+                  duration: 0.3,
+                  delay: index * 0.06,
+                  ease: [0.25, 1, 0.5, 1],
+                }}
+                whileHover={{ x: 4 }}
               >
                 <TableCell>
                   <span className="font-medium">{cluster.name}</span>
@@ -91,7 +102,7 @@ export function ClusterList() {
                 <TableCell className="text-muted-foreground">
                   {cluster.kubernetes_version || '-'}
                 </TableCell>
-              </TableRow>
+              </MotionTableRow>
             );
           })}
         </TableBody>
