@@ -106,7 +106,11 @@ export interface UseSSEReturn {
 }
 
 // Configuration
-const SSE_ENDPOINT = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Use relative URL in browser so requests go through Next.js proxy (avoids CORS).
+// Use absolute URL on server-side for SSR.
+const SSE_ENDPOINT = typeof window === 'undefined'
+  ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
+  : '';
 const MAX_EVENTS = 100; // Keep last 100 events in memory
 const INITIAL_RETRY_DELAY = 1000; // 1 second
 const MAX_RETRY_DELAY = 30000; // 30 seconds
@@ -151,6 +155,8 @@ export function useSSE(filters?: SSEFilters, enabled: boolean = true): UseSSERet
   const token = useAuthStore((state) => state.token);
 
   // Build URL with filters
+  // Depend on individual primitive values, not the filters object reference,
+  // so the callback stays stable even when the caller passes a new object literal.
   const buildURL = useCallback(() => {
     const params = new URLSearchParams();
     if (filters?.cluster_id) params.append('cluster_id', filters.cluster_id);
@@ -162,7 +168,8 @@ export function useSSE(filters?: SSEFilters, enabled: boolean = true): UseSSERet
     const url = `${SSE_ENDPOINT}/api/v1/events/stream${queryString ? `?${queryString}` : ''}`;
 
     return url;
-  }, [filters]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters?.cluster_id, filters?.project_id, filters?.workload_id, filters?.resource_type]);
 
   // Add event to list
   const addEvent = useCallback((event: SSEEvent) => {
