@@ -1,15 +1,24 @@
 import { useAuthStore } from '@/store/auth';
 import { refreshAccessToken, getCurrentUser } from '@/api/auth';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
+
+function useHydrated() {
+  return useSyncExternalStore(
+    (cb) => useAuthStore.persist.onFinishHydration(cb),
+    () => useAuthStore.persist.hasHydrated(),
+    () => false,
+  );
+}
 
 export function useAuth(requireAuth = false) {
   const router = useRouter();
-  const { user, token, isAuthenticated, _hydrated, login, logout, setToken } = useAuthStore();
+  const { user, token, isAuthenticated, login, logout, setToken } = useAuthStore();
+  const hydrated = useHydrated();
   const refreshAttempted = useRef(false);
 
   useEffect(() => {
-    if (!_hydrated) return;
+    if (!hydrated) return;
 
     if (requireAuth && !isAuthenticated && !refreshAttempted.current) {
       refreshAttempted.current = true;
@@ -31,13 +40,13 @@ export function useAuth(requireAuth = false) {
     } else if (requireAuth && !isAuthenticated) {
       router.push('/login');
     }
-  }, [requireAuth, isAuthenticated, _hydrated, router, login, setToken]);
+  }, [requireAuth, isAuthenticated, hydrated, router, login, setToken]);
 
   return {
     user,
     token,
-    isAuthenticated: _hydrated && isAuthenticated,
-    isLoading: !_hydrated,
+    isAuthenticated: hydrated && isAuthenticated,
+    isLoading: !hydrated,
     login,
     logout,
   };
