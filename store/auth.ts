@@ -11,6 +11,7 @@ interface AuthState {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
+  _hydrated: boolean;
   login: (token: string, user: User) => void;
   logout: () => void;
   setUser: (user: User) => void;
@@ -23,6 +24,7 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       token: null,
       isAuthenticated: false,
+      _hydrated: false,
       login: (token, user) => {
         if (typeof window !== 'undefined') {
           localStorage.setItem('token', token);
@@ -45,6 +47,11 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'auth-storage',
+      onRehydrateStorage: () => {
+        return () => {
+          useAuthStore.setState({ _hydrated: true });
+        };
+      },
     }
   )
 );
