@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
-import { AppLayout } from '@/components/layout/AppLayout';
+
 
 const templateData: Record<string, { name: string; components: string[]; variables: { key: string; label: string; default: string; description: string }[] }> = {
   'node-postgres': {
@@ -77,8 +77,8 @@ function StackDeployForm() {
   if (!isAuthenticated) return null;
 
   return (
-    <AppLayout>
-      <div className="max-w-2xl space-y-6">
+    
+      <div className="px-8 py-8 max-w-2xl space-y-6">
         <button onClick={() => router.back()} className="flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700">
           <ArrowLeft className="h-4 w-4" /> Back to templates
         </button>
@@ -135,6 +135,6 @@ function StackDeployForm() {
           </Card>
         )}
       </div>
-    </AppLayout>
+    
   );
 }

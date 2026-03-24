@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
-import { AppLayout } from '@/components/layout/AppLayout';
+
 
 const templates = [
   {
@@ -81,8 +81,8 @@ export default function StacksPage() {
   if (!isAuthenticated) return null;
 
   return (
-    <AppLayout>
-      <div className="space-y-6">
+    
+      <div className="px-8 py-8 space-y-6 max-w-5xl">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-lg font-semibold text-zinc-900">Stack Templates</h1>
@@ -139,6 +139,6 @@ export default function StacksPage() {
           ))}
         </div>
       </div>
-    </AppLayout>
+    
   );
 }

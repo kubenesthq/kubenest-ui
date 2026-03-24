@@ -1,0 +1,3 @@
+[    5377ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3000/api/v1/login:0
+[   63799ms] [ERROR] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=w9u2S7hCk7MUiZuRx5Jhb' failed:  @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_client_aaee43fe._.js:10116
+[   64809ms] [ERROR] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=w9u2S7hCk7MUiZuRx5Jhb' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_client_aaee43fe._.js:10116

@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
-import { AppLayout } from '@/components/layout/AppLayout';
+
 
 const mockTeams = [
   {
@@ -54,8 +54,8 @@ export default function TeamsPage() {
   if (!isAuthenticated) return null;
 
   return (
-    <AppLayout>
-      <div className="space-y-6">
+    
+      <div className="px-8 py-8 space-y-6 max-w-5xl">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-lg font-semibold text-zinc-900">Teams</h1>
@@ -163,6 +163,6 @@ export default function TeamsPage() {
           </div>
         )}
       </div>
-    </AppLayout>
+    
   );
 }

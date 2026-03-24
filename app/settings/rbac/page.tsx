@@ -4,7 +4,7 @@ import { Shield, Check, X } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
-import { AppLayout } from '@/components/layout/AppLayout';
+
 
 const roles = [
   { name: 'Admin', description: 'Full access to all resources and settings', color: 'bg-blue-100 text-blue-700' },
@@ -49,8 +49,8 @@ export default function RBACPage() {
   if (!isAuthenticated) return null;
 
   return (
-    <AppLayout>
-      <div className="space-y-6">
+    
+      <div className="px-8 py-8 space-y-6 max-w-5xl">
         <div>
           <h1 className="text-lg font-semibold text-zinc-900">Access Control</h1>
           <p className="text-sm text-zinc-500 mt-0.5">Role-based access control for your organization.</p>
@@ -100,6 +100,6 @@ export default function RBACPage() {
           </CardContent>
         </Card>
       </div>
-    </AppLayout>
+    
   );
 }

@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { Users, Shield, Key, Globe, Bell, CreditCard } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
-import { AppLayout } from '@/components/layout/AppLayout';
+
 
 const settingsItems = [
   { name: 'Teams', description: 'Manage teams, members, and invitations', href: '/settings/teams', icon: Users, ready: true },
@@ -22,8 +22,8 @@ export default function SettingsPage() {
   if (!isAuthenticated) return null;
 
   return (
-    <AppLayout>
-      <div className="space-y-6">
+    
+      <div className="px-8 py-8 space-y-6 max-w-5xl">
         <div>
           <h1 className="text-lg font-semibold text-zinc-900">Settings</h1>
           <p className="text-sm text-zinc-500 mt-0.5">Organization settings and configuration.</p>
@@ -56,6 +56,6 @@ export default function SettingsPage() {
           ))}
         </div>
       </div>
-    </AppLayout>
+    
   );
 }

@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
-import { AppLayout } from '@/components/layout/AppLayout';
+
 
 const providers = [
   { id: 'google', name: 'Google Workspace', status: 'not_configured', icon: '🔵' },
@@ -37,8 +37,8 @@ export default function SSOPage() {
   if (!isAuthenticated) return null;
 
   return (
-    <AppLayout>
-      <div className="space-y-6">
+    
+      <div className="px-8 py-8 space-y-6 max-w-5xl">
         <div>
           <h1 className="text-lg font-semibold text-zinc-900">Single Sign-On</h1>
           <p className="text-sm text-zinc-500 mt-0.5">Configure SSO providers for your organization. Members can sign in using their corporate identity.</p>
@@ -70,7 +70,7 @@ export default function SSOPage() {
             ))}
           </div>
         ) : (
-          <div className="max-w-2xl space-y-4">
+          <div className="px-8 py-8 max-w-2xl space-y-4">
             <button
               onClick={() => { setSelectedProvider(null); setTestResult(null); }}
               className="text-sm text-zinc-500 hover:text-zinc-700"
@@ -174,6 +174,6 @@ export default function SSOPage() {
           </div>
         )}
       </div>
-    </AppLayout>
+    
   );
 }

@@ -1,5 +1,6 @@
 {
-  "database": "beads.db",
-  "version": "0.22.1",
-  "jsonl_export": "beads.jsonl"
+  "database": "dolt",
+  "jsonl_export": "beads.jsonl",
+  "backend": "dolt",
+  "dolt_database": "beads_kubenest-ui"
 }
