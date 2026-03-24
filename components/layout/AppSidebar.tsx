@@ -2,18 +2,95 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Server, Plus, LogOut, Package } from 'lucide-react';
+import { LayoutDashboard, Server, Plus, LogOut, Package, Layers, Users, Shield, Key, Settings } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { cn } from '@/lib/utils';
 
-const navItems = [
+const mainNav = [
   {
     label: 'Dashboard',
     href: '/dashboard',
     icon: LayoutDashboard,
     matchPaths: ['/dashboard', '/clusters', '/projects', '/workloads'],
   },
+  {
+    label: 'Stacks',
+    href: '/stacks',
+    icon: Layers,
+    matchPaths: ['/stacks'],
+  },
 ];
+
+const adminNav = [
+  {
+    label: 'Addon Catalog',
+    href: '/admin/addon-definitions',
+    icon: Package,
+    matchPaths: ['/admin/addon-definitions'],
+  },
+];
+
+const settingsNav = [
+  {
+    label: 'Teams',
+    href: '/settings/teams',
+    icon: Users,
+    matchPaths: ['/settings/teams'],
+  },
+  {
+    label: 'Access Control',
+    href: '/settings/rbac',
+    icon: Shield,
+    matchPaths: ['/settings/rbac'],
+  },
+  {
+    label: 'SSO',
+    href: '/settings/sso',
+    icon: Key,
+    matchPaths: ['/settings/sso'],
+  },
+  {
+    label: 'Settings',
+    href: '/settings',
+    icon: Settings,
+    matchPaths: ['/settings'],
+  },
+];
+
+function NavItem({ item, pathname }: { item: typeof mainNav[0]; pathname: string }) {
+  const isActive = item.matchPaths.some((p) =>
+    p === '/settings' ? pathname === '/settings' : pathname.startsWith(p)
+  );
+  return (
+    <Link
+      href={item.href}
+      className={cn(
+        'flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors',
+        isActive
+          ? 'bg-blue-50 text-blue-700 font-medium'
+          : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900'
+      )}
+    >
+      <item.icon
+        className={cn('h-4 w-4 shrink-0', isActive ? 'text-blue-600' : 'text-zinc-400')}
+      />
+      {item.label}
+    </Link>
+  );
+}
+
+function NavSection({ label, items, pathname }: { label: string; items: typeof mainNav; pathname: string }) {
+  return (
+    <>
+      <div className="pt-4 pb-1 px-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-zinc-300">{label}</p>
+      </div>
+      {items.map((item) => (
+        <NavItem key={item.href} item={item} pathname={pathname} />
+      ))}
+    </>
+  );
+}
 
 export function AppSidebar() {
   const pathname = usePathname();
@@ -41,72 +118,21 @@ export function AppSidebar() {
 
       {/* Nav */}
       <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-        {navItems.map((item) => {
-          const isActive = item.matchPaths.some((p) => pathname.startsWith(p));
-          return (
-            <Link
-              key={item.label}
-              href={item.href}
-              className={cn(
-                'flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors',
-                isActive
-                  ? 'bg-blue-50 text-blue-700 font-medium'
-                  : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900'
-              )}
-            >
-              <item.icon
-                className={cn('h-4 w-4 shrink-0', isActive ? 'text-blue-600' : 'text-zinc-400')}
-              />
-              {item.label}
-            </Link>
-          );
-        })}
+        {mainNav.map((item) => (
+          <NavItem key={item.href} item={item} pathname={pathname} />
+        ))}
 
-        {/* Divider */}
+        {/* Actions */}
         <div className="pt-3 pb-1 px-3">
           <p className="text-xs font-medium uppercase tracking-wide text-zinc-300">Actions</p>
         </div>
+        <NavItem
+          item={{ label: 'Register Cluster', href: '/clusters/new', icon: Plus, matchPaths: ['/clusters/new'] }}
+          pathname={pathname}
+        />
 
-        <Link
-          href="/clusters/new"
-          className={cn(
-            'flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors',
-            pathname === '/clusters/new'
-              ? 'bg-blue-50 text-blue-700 font-medium'
-              : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900'
-          )}
-        >
-          <Plus
-            className={cn(
-              'h-4 w-4 shrink-0',
-              pathname === '/clusters/new' ? 'text-blue-600' : 'text-zinc-400'
-            )}
-          />
-          Register Cluster
-        </Link>
-
-        {/* Admin section */}
-        <div className="pt-4 pb-1 px-3">
-          <p className="text-xs font-medium uppercase tracking-wide text-zinc-300">Admin</p>
-        </div>
-
-        <Link
-          href="/admin/addon-definitions"
-          className={cn(
-            'flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors',
-            pathname.startsWith('/admin/addon-definitions')
-              ? 'bg-blue-50 text-blue-700 font-medium'
-              : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900'
-          )}
-        >
-          <Package
-            className={cn(
-              'h-4 w-4 shrink-0',
-              pathname.startsWith('/admin/addon-definitions') ? 'text-blue-600' : 'text-zinc-400'
-            )}
-          />
-          Addon Catalog
-        </Link>
+        <NavSection label="Admin" items={adminNav} pathname={pathname} />
+        <NavSection label="Settings" items={settingsNav} pathname={pathname} />
       </nav>
 
       {/* User */}
