@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
@@ -22,6 +22,10 @@ import {
 } from '@/components/ui/dialog';
 import { getProject, deleteProject } from '@/api/projects';
 import { getCluster } from '@/api/clusters';
+import {
+  getDemoProject, getDemoCluster, deleteDemoProject,
+  type DemoProject, type DemoCluster,
+} from '@/lib/demo-store';
 
 const fadeInUp = {
   initial: { opacity: 0, y: 20 },
@@ -38,24 +42,38 @@ export default function ProjectDetailPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Try demo project first
+  const [demoProject, setDemoProject] = useState<DemoProject | null>(null);
+  const [demoCluster, setDemoCluster] = useState<DemoCluster | null>(null);
+  const [isDemo, setIsDemo] = useState(false);
+  const [demoChecked, setDemoChecked] = useState(false);
+
+  useEffect(() => {
+    const dp = getDemoProject(projectId);
+    if (dp) {
+      setDemoProject(dp);
+      setDemoCluster(getDemoCluster(dp.cluster_id));
+      setIsDemo(true);
+    }
+    setDemoChecked(true);
+  }, [projectId]);
+
+  // API project (only if not demo)
   const { data: projectData, isLoading: projectLoading } = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => getProject(projectId),
+    enabled: demoChecked && !isDemo,
   });
 
-  const project = projectData;
-
   const { data: clusterData } = useQuery({
-    queryKey: ['cluster', project?.cluster_id],
-    queryFn: () => getCluster(project!.cluster_id),
-    enabled: !!project?.cluster_id,
+    queryKey: ['cluster', projectData?.cluster_id],
+    queryFn: () => getCluster(projectData!.cluster_id),
+    enabled: !isDemo && !!projectData?.cluster_id,
   });
 
   const deleteMutation = useMutation({
     mutationFn: deleteProject,
-    onMutate: () => {
-      setIsDeleting(true);
-    },
+    onMutate: () => { setIsDeleting(true); },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       router.push('/projects');
@@ -68,16 +86,35 @@ export default function ProjectDetailPage() {
   });
 
   const handleDelete = () => {
-    deleteMutation.mutate(projectId);
+    if (isDemo) {
+      deleteDemoProject(projectId);
+      router.push('/dashboard');
+    } else {
+      deleteMutation.mutate(projectId);
+    }
   };
 
-  if (projectLoading) {
+  if (!demoChecked || (!isDemo && projectLoading)) {
     return (
       <div className="flex items-center justify-center py-32">
         <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
       </div>
     );
   }
+
+  // Normalize project shape for rendering
+  const project = isDemo && demoProject
+    ? {
+        id: demoProject.id,
+        cluster_id: demoProject.cluster_id,
+        name: demoProject.name,
+        namespace: demoProject.namespace,
+        description: demoProject.description,
+        status: demoProject.status,
+        created_at: demoProject.created_at,
+        updated_at: null as string | null,
+      }
+    : projectData;
 
   if (!project) {
     return (
@@ -91,7 +128,7 @@ export default function ProjectDetailPage() {
     );
   }
 
-  const cluster = clusterData;
+  const cluster = isDemo ? (demoCluster ? { id: demoCluster.id, name: demoCluster.name } : null) : clusterData;
 
   return (
     <div className="px-8 py-8 max-w-5xl space-y-6">

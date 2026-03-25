@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Server, Plus, LogOut, Package, Layers, Users, Shield, Key, Settings } from 'lucide-react';
+import { LayoutDashboard, Server, Plus, LogOut, Package, Layers, BookTemplate, Users, Shield, Key, Settings } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { cn } from '@/lib/utils';
 
@@ -11,13 +11,13 @@ const mainNav = [
     label: 'Dashboard',
     href: '/dashboard',
     icon: LayoutDashboard,
-    matchPaths: ['/dashboard', '/clusters', '/projects', '/workloads'],
+    matchPaths: ['/dashboard', '/clusters', '/projects', '/workloads', '/demo-workloads'],
   },
   {
-    label: 'Stacks',
-    href: '/stacks',
+    label: 'Apps',
+    href: '/apps',
     icon: Layers,
-    matchPaths: ['/stacks'],
+    matchPaths: ['/apps'],
   },
 ];
 
@@ -31,6 +31,12 @@ const adminNav = [
 ];
 
 const settingsNav = [
+  {
+    label: 'Stack Templates',
+    href: '/settings/stack-templates',
+    icon: BookTemplate,
+    matchPaths: ['/settings/stack-templates'],
+  },
   {
     label: 'Teams',
     href: '/settings/teams',

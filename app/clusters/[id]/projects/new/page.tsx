@@ -1,20 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { useQuery, useMutation } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import Link from 'next/link';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Check } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Form, FormField } from '@/components/ui/form';
-import { getCluster } from '@/api/clusters';
-import { createProject } from '@/api/projects';
+import { getDemoCluster, createDemoProject, type DemoCluster } from '@/lib/demo-store';
 
 const fadeInUp = {
   initial: { opacity: 0, y: 20 },
@@ -30,7 +28,7 @@ const createProjectSchema = z.object({
     .regex(/^[a-zA-Z0-9-]+$/, 'Name can only contain letters, numbers, and hyphens'),
   description: z.string().optional(),
   registry_secret: z.string()
-    .regex(/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/, 'Must be a valid Kubernetes name (lowercase alphanumeric and hyphens)')
+    .regex(/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/, 'Must be a valid Kubernetes name')
     .optional()
     .or(z.literal('')),
 });
@@ -42,67 +40,59 @@ export default function NewProjectPage() {
   const params = useParams();
   const clusterId = params.id as string;
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [created, setCreated] = useState(false);
+  const [projectName, setProjectName] = useState('');
+  const [cluster, setCluster] = useState<DemoCluster | null>(null);
 
-  const { data: clusterData, isLoading: clusterLoading } = useQuery({
-    queryKey: ['cluster', clusterId],
-    queryFn: () => getCluster(clusterId),
-  });
+  useEffect(() => {
+    setCluster(getDemoCluster(clusterId));
+  }, [clusterId]);
 
   const form = useForm<CreateProjectFormData>({
     resolver: zodResolver(createProjectSchema),
-    defaultValues: {
-      name: '',
-      description: '',
-      registry_secret: '',
-    },
-  });
-
-  const createMutation = useMutation({
-    mutationFn: createProject,
-    onSuccess: (response) => {
-      router.push(`/projects/${response.id}`);
-    },
-    onError: (error: Error) => {
-      alert(`Failed to create project: ${error.message}`);
-      setIsSubmitting(false);
-    },
+    defaultValues: { name: '', description: '', registry_secret: '' },
   });
 
   const onSubmit = (data: CreateProjectFormData) => {
     setIsSubmitting(true);
-    createMutation.mutate({
-      name: data.name,
+    const project = createDemoProject({
       cluster_id: clusterId,
-      ...(data.description && { description: data.description }),
-      ...(data.registry_secret && { registry_secret: data.registry_secret }),
+      name: data.name,
+      description: data.description,
+      registry_secret: data.registry_secret || undefined,
     });
+    setProjectName(data.name);
+    setCreated(true);
+    setTimeout(() => {
+      router.push(`/projects/${project.id}`);
+    }, 1500);
   };
 
-  if (clusterLoading) {
+  if (created) {
     return (
-      <div className="flex items-center justify-center py-32">
-        <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+      <div className="px-8 py-8 max-w-2xl flex items-center justify-center min-h-[60vh]">
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.4, ease: easeOutQuart }}
+          className="text-center space-y-4"
+        >
+          <div className="mx-auto w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center">
+            <Check className="h-8 w-8 text-emerald-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-zinc-900">Project Created</h2>
+          <p className="text-zinc-500">
+            <span className="font-mono text-zinc-700">{projectName}</span> is ready for workloads.
+          </p>
+        </motion.div>
       </div>
     );
   }
 
-  const cluster = clusterData;
-
   return (
     <div className="px-8 py-8 max-w-2xl space-y-6">
-      {/* Breadcrumb */}
-      <motion.div
-        variants={fadeInUp}
-        initial="initial"
-        animate="animate"
-        transition={{ duration: 0.3, ease: easeOutQuart }}
-      >
-        <Button
-          variant="ghost"
-          size="sm"
-          asChild
-          className="h-7 px-2 text-zinc-400 hover:text-zinc-700 -ml-2"
-        >
+      <motion.div variants={fadeInUp} initial="initial" animate="animate" transition={{ duration: 0.3, ease: easeOutQuart }}>
+        <Button variant="ghost" size="sm" asChild className="h-7 px-2 text-zinc-400 hover:text-zinc-700 -ml-2">
           <Link href={`/clusters/${clusterId}`}>
             <ArrowLeft className="h-3.5 w-3.5 mr-1.5" />
             {cluster?.name ?? 'Cluster'}
@@ -110,112 +100,40 @@ export default function NewProjectPage() {
         </Button>
       </motion.div>
 
-      {/* Header */}
-      <motion.div
-        variants={fadeInUp}
-        initial="initial"
-        animate="animate"
-        transition={{ duration: 0.4, delay: 0.05, ease: easeOutQuart }}
-      >
+      <motion.div variants={fadeInUp} initial="initial" animate="animate" transition={{ duration: 0.4, delay: 0.05, ease: easeOutQuart }}>
         <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Create New Project</h1>
-        <p className="text-sm text-zinc-500 mt-1">
-          Deploy and manage workloads in this project
-        </p>
+        <p className="text-sm text-zinc-500 mt-1">Deploy and manage workloads in this project</p>
       </motion.div>
 
-      <div className="space-y-6">
-        {/* Project Details Card */}
-        <motion.div
-          variants={fadeInUp}
-          initial="initial"
-          animate="animate"
-          transition={{ duration: 0.4, delay: 0.12, ease: easeOutQuart }}
-        >
-          <Card className="border-zinc-200">
-            <CardHeader>
-              <CardTitle>Project Details</CardTitle>
-              <CardDescription>
-                Enter the details for your new Kubernetes project
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Form onSubmit={form.handleSubmit(onSubmit)}>
-                <FormField
-                  label="Project Name"
-                  error={form.formState.errors.name?.message}
-                  required
-                >
-                  <Input
-                    {...form.register('name')}
-                    placeholder="my-project"
-                    disabled={isSubmitting}
-                  />
-                </FormField>
+      <motion.div variants={fadeInUp} initial="initial" animate="animate" transition={{ duration: 0.4, delay: 0.12, ease: easeOutQuart }}>
+        <Card className="border-zinc-200">
+          <CardHeader>
+            <CardTitle>Project Details</CardTitle>
+            <CardDescription>Enter the details for your new Kubernetes project</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Form onSubmit={form.handleSubmit(onSubmit)}>
+              <FormField label="Project Name" error={form.formState.errors.name?.message} required>
+                <Input {...form.register('name')} placeholder="my-project" disabled={isSubmitting} />
+              </FormField>
 
-                <FormField
-                  label="Description"
-                  error={form.formState.errors.description?.message}
-                >
-                  <Input
-                    {...form.register('description')}
-                    placeholder="Optional project description"
-                    disabled={isSubmitting}
-                  />
-                </FormField>
+              <FormField label="Description" error={form.formState.errors.description?.message}>
+                <Input {...form.register('description')} placeholder="Optional project description" disabled={isSubmitting} />
+              </FormField>
 
-                <FormField
-                  label="Registry Secret"
-                  error={form.formState.errors.registry_secret?.message}
-                >
-                  <Input
-                    {...form.register('registry_secret')}
-                    placeholder="my-registry-secret"
-                    disabled={isSubmitting}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Kubernetes secret name for pulling images from a private registry
-                  </p>
-                </FormField>
+              <FormField label="Registry Secret" error={form.formState.errors.registry_secret?.message}>
+                <Input {...form.register('registry_secret')} placeholder="my-registry-secret" disabled={isSubmitting} />
+                <p className="text-xs text-muted-foreground mt-1">Kubernetes secret name for pulling images from a private registry</p>
+              </FormField>
 
-                <div className="flex justify-end gap-3 mt-6">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => router.push(`/clusters/${clusterId}`)}
-                    disabled={isSubmitting}
-                  >
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={isSubmitting}>
-                    {isSubmitting ? 'Creating...' : 'Create Project'}
-                  </Button>
-                </div>
-              </Form>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div
-          variants={fadeInUp}
-          initial="initial"
-          animate="animate"
-          transition={{ duration: 0.4, delay: 0.18, ease: easeOutQuart }}
-        >
-          <Card className="border-zinc-200">
-            <CardHeader>
-              <CardTitle className="text-sm">Guardrails Configuration</CardTitle>
-              <CardDescription className="text-xs">
-                Advanced configuration (optional)
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                Guardrails configuration will be available in a future update.
-              </p>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </div>
+              <div className="flex justify-end gap-3 mt-6">
+                <Button type="button" variant="outline" onClick={() => router.push(`/clusters/${clusterId}`)} disabled={isSubmitting}>Cancel</Button>
+                <Button type="submit" disabled={isSubmitting}>{isSubmitting ? 'Creating...' : 'Create Project'}</Button>
+              </div>
+            </Form>
+          </CardContent>
+        </Card>
+      </motion.div>
     </div>
   );
 }

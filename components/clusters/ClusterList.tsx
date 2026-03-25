@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
@@ -15,6 +16,7 @@ import {
 import { ClusterStatusBadge } from './ClusterStatusBadge';
 import { clustersApi } from '@/lib/api/clusters';
 import { getConnectionStatus } from '@/types/api';
+import { getDemoClusters, type DemoCluster } from '@/lib/demo-store';
 
 const MotionTableRow = motion(TableRow);
 
@@ -23,8 +25,13 @@ export function ClusterList() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['clusters'],
     queryFn: clustersApi.list,
-    refetchInterval: 30000, // Refetch every 30 seconds to update connection status
+    refetchInterval: 30000,
   });
+  const [demoClusters, setDemoClusters] = useState<DemoCluster[]>([]);
+
+  useEffect(() => {
+    setDemoClusters(getDemoClusters());
+  }, []);
 
   if (isLoading) {
     return (
@@ -34,19 +41,10 @@ export function ClusterList() {
     );
   }
 
-  if (error) {
-    return (
-      <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-center">
-        <p className="text-sm text-destructive">
-          Failed to load clusters: {error instanceof Error ? error.message : 'Unknown error'}
-        </p>
-      </div>
-    );
-  }
+  const apiClusters = data?.data || [];
+  const hasAny = apiClusters.length > 0 || demoClusters.length > 0;
 
-  const clusters = data?.data || [];
-
-  if (clusters.length === 0) {
+  if (!hasAny) {
     return (
       <div className="rounded-lg border border-dashed p-8 text-center">
         <p className="text-muted-foreground">
@@ -70,7 +68,27 @@ export function ClusterList() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {clusters.map((cluster, index) => {
+          {/* Demo clusters */}
+          {demoClusters.map((cluster, index) => (
+            <MotionTableRow
+              key={`demo-${cluster.id}`}
+              className="cursor-pointer"
+              onClick={() => router.push(`/clusters/${cluster.id}`)}
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.3, delay: index * 0.06, ease: [0.25, 1, 0.5, 1] }}
+              whileHover={{ x: 4 }}
+            >
+              <TableCell><span className="font-medium">{cluster.name}</span></TableCell>
+              <TableCell className="text-muted-foreground">{cluster.description || '-'}</TableCell>
+              <TableCell><span className="capitalize">{cluster.status}</span></TableCell>
+              <TableCell><ClusterStatusBadge status={cluster.status === 'connected' ? 'connected' : cluster.status === 'pending' ? 'pending' : 'disconnected'} /></TableCell>
+              <TableCell>{cluster.node_count || 0}</TableCell>
+              <TableCell className="text-muted-foreground">{cluster.kubernetes_version || '-'}</TableCell>
+            </MotionTableRow>
+          ))}
+          {/* API clusters */}
+          {apiClusters.map((cluster, index) => {
             const connectionStatus = getConnectionStatus(cluster);
             return (
               <MotionTableRow
@@ -79,29 +97,15 @@ export function ClusterList() {
                 onClick={() => router.push(`/clusters/${cluster.id}`)}
                 initial={{ opacity: 0, x: -8 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{
-                  duration: 0.3,
-                  delay: index * 0.06,
-                  ease: [0.25, 1, 0.5, 1],
-                }}
+                transition={{ duration: 0.3, delay: (demoClusters.length + index) * 0.06, ease: [0.25, 1, 0.5, 1] }}
                 whileHover={{ x: 4 }}
               >
-                <TableCell>
-                  <span className="font-medium">{cluster.name}</span>
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {cluster.description || '-'}
-                </TableCell>
-                <TableCell>
-                  <span className="capitalize">{cluster.status}</span>
-                </TableCell>
-                <TableCell>
-                  <ClusterStatusBadge status={connectionStatus} />
-                </TableCell>
+                <TableCell><span className="font-medium">{cluster.name}</span></TableCell>
+                <TableCell className="text-muted-foreground">{cluster.description || '-'}</TableCell>
+                <TableCell><span className="capitalize">{cluster.status}</span></TableCell>
+                <TableCell><ClusterStatusBadge status={connectionStatus} /></TableCell>
                 <TableCell>{cluster.node_count || 0}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {cluster.kubernetes_version || '-'}
-                </TableCell>
+                <TableCell className="text-muted-foreground">{cluster.kubernetes_version || '-'}</TableCell>
               </MotionTableRow>
             );
           })}

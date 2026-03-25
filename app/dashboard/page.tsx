@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Server, FolderKanban, Package } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -8,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { ClusterList } from '@/components/clusters/ClusterList';
 import { useClusters } from '@/hooks/useClusters';
 import { useAuth } from '@/hooks/useAuth';
+import { getDemoClusters, type DemoCluster } from '@/lib/demo-store';
 
 const fadeInUp = {
   initial: { opacity: 0, y: 20 },
@@ -20,16 +22,25 @@ export default function DashboardPage() {
   const router = useRouter();
   const { isAuthenticated } = useAuth(true);
   const { data: clustersData } = useClusters();
+  const [demoClusters, setDemoClusters] = useState<DemoCluster[]>([]);
+
+  useEffect(() => {
+    setDemoClusters(getDemoClusters());
+  }, []);
 
   if (!isAuthenticated) {
     return null;
   }
 
-  const clusters = clustersData?.data || [];
-  const totalClusters = clusters.length;
-  const connectedClusters = clusters.filter(c => c.status === 'connected').length;
-  const totalNodes = clusters.reduce((acc, cluster) => acc + (cluster.node_count || 0), 0);
-  const degradedClusters = clusters.filter(c => c.status === 'error' || c.status === 'disconnected').length;
+  const apiClusters = clustersData?.data || [];
+  const allClusters = [
+    ...demoClusters.map(c => ({ ...c, node_count: c.node_count ?? 0 })),
+    ...apiClusters,
+  ];
+  const totalClusters = allClusters.length;
+  const connectedClusters = allClusters.filter(c => c.status === 'connected').length;
+  const totalNodes = allClusters.reduce((acc, cluster) => acc + (cluster.node_count || 0), 0);
+  const degradedClusters = allClusters.filter(c => c.status === 'error' || c.status === 'disconnected').length;
 
   const stats = [
     {
