@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { Users, Shield, Key, Globe, Bell, CreditCard } from 'lucide-react';
+import { Users, Shield, Key, Globe, Bell, CreditCard, Cloud } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -10,6 +10,7 @@ const settingsItems = [
   { name: 'Teams', description: 'Manage teams, members, and invitations', href: '/settings/teams', icon: Users, ready: true },
   { name: 'Access Control', description: 'Roles and permissions for your organization', href: '/settings/rbac', icon: Shield, ready: true },
   { name: 'Single Sign-On', description: 'Configure OIDC, SAML, or social login providers', href: '/settings/sso', icon: Key, ready: true },
+  { name: 'Cloud Credentials', description: 'Manage cloud provider credentials for provisioning', href: '/settings/cloud-credentials', icon: Cloud, ready: true },
   { name: 'Domains', description: 'Custom domains and wildcard DNS configuration', href: '#', icon: Globe, ready: false },
   { name: 'Notifications', description: 'Slack, email, and webhook alert configuration', href: '#', icon: Bell, ready: false },
   { name: 'Billing', description: 'Usage, cost showback, and subscription management', href: '#', icon: CreditCard, ready: false },

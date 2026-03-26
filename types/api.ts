@@ -232,6 +232,35 @@ export type WorkloadListResponse = PaginatedResponse<Workload>;
 export type AddonDefinitionListResponse = PaginatedResponse<AddonDefinition>;
 export type AddonInstanceListResponse = PaginatedResponse<AddonInstance>;
 
+// Cloud credential types
+export type CloudProvider = 'aws' | 'gcp' | 'azure';
+
+export interface CloudCredential {
+  id: string;
+  name: string;
+  provider: CloudProvider;
+  access_key_id: string;
+  secret_access_key: string;
+  region: string;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface CloudCredentialCreate {
+  name: string;
+  provider: CloudProvider;
+  access_key_id: string;
+  secret_access_key: string;
+  region: string;
+}
+
+export interface CloudCredentialUpdate {
+  name?: string;
+  access_key_id?: string;
+  secret_access_key?: string;
+  region?: string;
+}
+
 // Type aliases for compatibility
 export type ClusterCreateRequest = CreateClusterRequest;
 export type ProjectCreateRequest = CreateProjectRequest;
