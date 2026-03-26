@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Cloud, Plus, Pencil, Trash2, Eye, EyeOff } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Cloud, Plus, Pencil, Trash2, Loader2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,9 +15,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAuth } from '@/hooks/useAuth';
+import {
+  getCloudCredentials,
+  createCloudCredential,
+  updateCloudCredential,
+  deleteCloudCredential,
+} from '@/api/cloud-credentials';
 import type { CloudCredential, CloudProvider } from '@/types/api';
-
-const STORAGE_KEY = 'kubenest-cloud-credentials';
 
 const AWS_REGIONS = [
   'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
@@ -25,25 +29,9 @@ const AWS_REGIONS = [
   'ap-south-1', 'ap-southeast-1', 'ap-northeast-1',
 ];
 
-const providerColors: Record<CloudProvider, string> = {
-  aws: 'bg-orange-100 text-orange-700',
-  gcp: 'bg-blue-100 text-blue-700',
-  azure: 'bg-sky-100 text-sky-700',
-};
-
-function maskSecret(value: string): string {
+function maskKeyId(value: string): string {
   if (value.length <= 4) return '****';
   return '****' + value.slice(-4);
-}
-
-function loadCredentials(): CloudCredential[] {
-  if (typeof window === 'undefined') return [];
-  const stored = localStorage.getItem(STORAGE_KEY);
-  return stored ? JSON.parse(stored) : [];
-}
-
-function saveCredentials(creds: CloudCredential[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(creds));
 }
 
 interface FormData {
@@ -56,7 +44,7 @@ interface FormData {
 
 const emptyForm: FormData = {
   name: '',
-  provider: 'aws',
+  provider: 'AWS',
   access_key_id: '',
   secret_access_key: '',
   region: 'us-east-1',
@@ -65,44 +53,64 @@ const emptyForm: FormData = {
 export default function CloudCredentialsPage() {
   const { isAuthenticated } = useAuth(true);
   const [credentials, setCredentials] = useState<CloudCredential[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormData>(emptyForm);
-  const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
+
+  const fetchCredentials = useCallback(async () => {
+    try {
+      setError(null);
+      const res = await getCloudCredentials();
+      setCredentials(res.data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load credentials');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    setCredentials(loadCredentials());
-  }, []);
+    if (isAuthenticated) fetchCredentials();
+  }, [isAuthenticated, fetchCredentials]);
 
   if (!isAuthenticated) return null;
 
-  function handleSave() {
-    if (!form.name || !form.access_key_id || !form.secret_access_key || !form.region) return;
+  async function handleSave() {
+    if (!form.name || !form.access_key_id || !form.region) return;
+    if (!editingId && !form.secret_access_key) return;
 
-    const now = new Date().toISOString();
-    let updated: CloudCredential[];
-
-    if (editingId) {
-      updated = credentials.map((c) =>
-        c.id === editingId
-          ? { ...c, ...form, updated_at: now }
-          : c
-      );
-    } else {
-      const newCred: CloudCredential = {
-        id: crypto.randomUUID(),
-        ...form,
-        created_at: now,
-        updated_at: null,
-      };
-      updated = [...credentials, newCred];
+    setSaving(true);
+    setError(null);
+    try {
+      if (editingId) {
+        const update: Record<string, string> = {
+          name: form.name,
+          region: form.region,
+          access_key_id: form.access_key_id,
+        };
+        if (form.secret_access_key) update.secret_access_key = form.secret_access_key;
+        await updateCloudCredential(editingId, update);
+      } else {
+        await createCloudCredential({
+          name: form.name,
+          provider: form.provider,
+          access_key_id: form.access_key_id,
+          secret_access_key: form.secret_access_key,
+          region: form.region,
+        });
+      }
+      setShowForm(false);
+      setEditingId(null);
+      setForm(emptyForm);
+      await fetchCredentials();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save credential');
+    } finally {
+      setSaving(false);
     }
-
-    saveCredentials(updated);
-    setCredentials(updated);
-    setShowForm(false);
-    setEditingId(null);
-    setForm(emptyForm);
   }
 
   function handleEdit(cred: CloudCredential) {
@@ -110,32 +118,36 @@ export default function CloudCredentialsPage() {
       name: cred.name,
       provider: cred.provider,
       access_key_id: cred.access_key_id,
-      secret_access_key: cred.secret_access_key,
+      secret_access_key: '',
       region: cred.region,
     });
     setEditingId(cred.id);
     setShowForm(true);
   }
 
-  function handleDelete(id: string) {
-    const updated = credentials.filter((c) => c.id !== id);
-    saveCredentials(updated);
-    setCredentials(updated);
-  }
-
-  function toggleReveal(id: string) {
-    setRevealedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  async function handleDelete(id: string) {
+    setError(null);
+    try {
+      await deleteCloudCredential(id);
+      await fetchCredentials();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete credential');
+    }
   }
 
   function handleCancel() {
     setShowForm(false);
     setEditingId(null);
     setForm(emptyForm);
+    setError(null);
+  }
+
+  if (loading) {
+    return (
+      <div className="px-8 py-8 flex items-center justify-center">
+        <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
+      </div>
+    );
   }
 
   return (
@@ -148,11 +160,17 @@ export default function CloudCredentialsPage() {
           </p>
         </div>
         {!showForm && (
-          <Button size="sm" onClick={() => { setForm(emptyForm); setEditingId(null); setShowForm(true); }}>
+          <Button size="sm" onClick={() => { setForm(emptyForm); setEditingId(null); setShowForm(true); setError(null); }}>
             <Plus className="h-4 w-4 mr-1" /> Add Credential
           </Button>
         )}
       </div>
+
+      {error && (
+        <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       {/* Create/Edit Form */}
       {showForm && (
@@ -166,7 +184,7 @@ export default function CloudCredentialsPage() {
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium text-zinc-600">Name</Label>
                 <Input
-                  placeholder="e.g. Production AWS"
+                  placeholder="e.g. aws-prod"
                   className="border-zinc-200"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -178,14 +196,13 @@ export default function CloudCredentialsPage() {
                 <Select
                   value={form.provider}
                   onValueChange={(v) => setForm({ ...form, provider: v as CloudProvider })}
+                  disabled={!!editingId}
                 >
                   <SelectTrigger className="border-zinc-200">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="aws">Amazon Web Services</SelectItem>
-                    <SelectItem value="gcp" disabled>Google Cloud Platform (coming soon)</SelectItem>
-                    <SelectItem value="azure" disabled>Microsoft Azure (coming soon)</SelectItem>
+                    <SelectItem value="AWS">Amazon Web Services</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -201,10 +218,13 @@ export default function CloudCredentialsPage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-zinc-600">Secret Access Key</Label>
+                <Label className="text-xs font-medium text-zinc-600">
+                  Secret Access Key
+                  {editingId && <span className="text-zinc-400 font-normal ml-1">(leave blank to keep current)</span>}
+                </Label>
                 <Input
                   type="password"
-                  placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                  placeholder={editingId ? '••••••••' : 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'}
                   className="border-zinc-200 font-mono text-sm"
                   value={form.secret_access_key}
                   onChange={(e) => setForm({ ...form, secret_access_key: e.target.value })}
@@ -236,8 +256,9 @@ export default function CloudCredentialsPage() {
               <Button
                 size="sm"
                 onClick={handleSave}
-                disabled={!form.name || !form.access_key_id || !form.secret_access_key}
+                disabled={saving || !form.name || !form.access_key_id || (!editingId && !form.secret_access_key)}
               >
+                {saving && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
                 {editingId ? 'Update' : 'Save Credential'}
               </Button>
             </div>
@@ -268,67 +289,50 @@ export default function CloudCredentialsPage() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {credentials.map((cred) => {
-            const revealed = revealedIds.has(cred.id);
-            return (
-              <Card key={cred.id} className="border-zinc-200">
-                <CardContent className="pt-5 pb-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-3">
-                      <div className="h-9 w-9 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
-                        <Cloud className="h-4.5 w-4.5 text-orange-600" />
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-medium text-zinc-900">{cred.name}</h3>
-                          <Badge className={`text-xs font-normal ${providerColors[cred.provider]}`}>
-                            {cred.provider.toUpperCase()}
-                          </Badge>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-1 text-xs text-zinc-500">
-                          <div>
-                            <span className="text-zinc-400">Key ID:</span>{' '}
-                            <span className="font-mono">{maskSecret(cred.access_key_id)}</span>
-                          </div>
-                          <div>
-                            <span className="text-zinc-400">Secret:</span>{' '}
-                            <span className="font-mono">
-                              {revealed ? cred.secret_access_key : maskSecret(cred.secret_access_key)}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-zinc-400">Region:</span>{' '}
-                            <span className="font-mono">{cred.region}</span>
-                          </div>
-                        </div>
-                      </div>
+          {credentials.map((cred) => (
+            <Card key={cred.id} className="border-zinc-200">
+              <CardContent className="pt-5 pb-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start gap-3">
+                    <div className="h-9 w-9 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
+                      <Cloud className="h-4.5 w-4.5 text-orange-600" />
                     </div>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleReveal(cred.id)}
-                        title={revealed ? 'Hide secret' : 'Reveal secret'}
-                      >
-                        {revealed ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </Button>
-                      <Button variant="ghost" size="sm" onClick={() => handleEdit(cred)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                        onClick={() => handleDelete(cred.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-medium text-zinc-900">{cred.name}</h3>
+                        <Badge className="text-xs font-normal bg-orange-100 text-orange-700">
+                          {cred.provider}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-xs text-zinc-500">
+                        <div>
+                          <span className="text-zinc-400">Key ID:</span>{' '}
+                          <span className="font-mono">{maskKeyId(cred.access_key_id)}</span>
+                        </div>
+                        <div>
+                          <span className="text-zinc-400">Region:</span>{' '}
+                          <span className="font-mono">{cred.region}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                  <div className="flex gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => handleEdit(cred)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                      onClick={() => handleDelete(cred.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
     </div>

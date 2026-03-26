@@ -233,15 +233,14 @@ export type AddonDefinitionListResponse = PaginatedResponse<AddonDefinition>;
 export type AddonInstanceListResponse = PaginatedResponse<AddonInstance>;
 
 // Cloud credential types
-export type CloudProvider = 'aws' | 'gcp' | 'azure';
+export type CloudProvider = 'AWS';
 
 export interface CloudCredential {
   id: string;
   name: string;
   provider: CloudProvider;
-  access_key_id: string;
-  secret_access_key: string;
   region: string;
+  access_key_id: string;
   created_at: string;
   updated_at: string | null;
 }
@@ -256,10 +255,12 @@ export interface CloudCredentialCreate {
 
 export interface CloudCredentialUpdate {
   name?: string;
+  region?: string;
   access_key_id?: string;
   secret_access_key?: string;
-  region?: string;
 }
+
+export type CloudCredentialListResponse = PaginatedResponse<CloudCredential>;
 
 // Type aliases for compatibility
 export type ClusterCreateRequest = CreateClusterRequest;
