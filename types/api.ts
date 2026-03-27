@@ -262,6 +262,25 @@ export interface CloudCredentialUpdate {
 
 export type CloudCredentialListResponse = PaginatedResponse<CloudCredential>;
 
+// Provisioning types
+export type ProvisioningAction = 'CREATE' | 'SCALE' | 'DESTROY';
+export type ProvisioningStatus = 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+
+export interface ProvisioningJob {
+  id: string;
+  cluster_id: string;
+  credential_id: string | null;
+  action: ProvisioningAction;
+  status: ProvisioningStatus;
+  progress_pct: number;
+  error_message: string | null;
+  terraform_state_key: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
 // Type aliases for compatibility
 export type ClusterCreateRequest = CreateClusterRequest;
 export type ProjectCreateRequest = CreateProjectRequest;

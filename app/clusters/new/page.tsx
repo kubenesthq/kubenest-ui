@@ -5,14 +5,14 @@ import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ArrowLeft, Check } from 'lucide-react';
+import { ArrowLeft, Check, Cloud, Server } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
-import { createDemoCluster } from '@/lib/demo-store';
+import { createCluster } from '@/api/clusters';
 import { useState } from 'react';
 
 const fadeInUp = {
@@ -36,11 +36,15 @@ const clusterSchema = z.object({
 
 type ClusterFormData = z.infer<typeof clusterSchema>;
 
+type Mode = 'choose' | 'connect';
+
 export default function NewClusterPage() {
   const router = useRouter();
   const { isAuthenticated } = useAuth(true);
+  const [mode, setMode] = useState<Mode>('choose');
   const [created, setCreated] = useState(false);
   const [clusterName, setClusterName] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   const {
     register,
@@ -50,16 +54,21 @@ export default function NewClusterPage() {
     resolver: zodResolver(clusterSchema),
   });
 
-  const onSubmit = (data: ClusterFormData) => {
-    const cluster = createDemoCluster({
-      name: data.name,
-      description: data.description,
-    });
-    setClusterName(data.name);
-    setCreated(true);
-    setTimeout(() => {
-      router.push(`/clusters/${cluster.id}`);
-    }, 1500);
+  const onSubmit = async (data: ClusterFormData) => {
+    setError(null);
+    try {
+      const cluster = await createCluster({
+        name: data.name,
+        description: data.description,
+      });
+      setClusterName(data.name);
+      setCreated(true);
+      setTimeout(() => {
+        router.push(`/clusters/${cluster.id}`);
+      }, 1500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create cluster');
+    }
   };
 
   if (!isAuthenticated) return null;
@@ -107,43 +116,94 @@ export default function NewClusterPage() {
         animate="animate"
         transition={{ duration: 0.4, delay: 0.05, ease: easeOutQuart }}
       >
-        <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Register New Cluster</h1>
-        <p className="text-sm text-zinc-500 mt-1">Add a new Kubernetes cluster to Kubenest</p>
+        <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Add Cluster</h1>
+        <p className="text-sm text-zinc-500 mt-1">Connect an existing cluster or provision a new one</p>
       </motion.div>
 
-      <motion.div
-        variants={fadeInUp}
-        initial="initial"
-        animate="animate"
-        transition={{ duration: 0.4, delay: 0.12, ease: easeOutQuart }}
-      >
-        <Card className="border-zinc-200">
-          <CardHeader>
-            <CardTitle>Cluster Information</CardTitle>
-            <CardDescription>Provide details about your Kubernetes cluster</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="name">Cluster Name <span className="text-destructive">*</span></Label>
-                <Input id="name" placeholder="production-us-west" {...register('name')} aria-invalid={!!errors.name} />
-                {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
-                <p className="text-xs text-muted-foreground">DNS-compliant name (lowercase, alphanumeric, hyphens only)</p>
-              </div>
+      {error && (
+        <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Input id="description" placeholder="Primary production cluster in US West region" {...register('description')} />
-              </div>
+      {/* Mode Selection */}
+      {mode === 'choose' && (
+        <motion.div
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          transition={{ duration: 0.4, delay: 0.12, ease: easeOutQuart }}
+          className="grid grid-cols-1 md:grid-cols-2 gap-4"
+        >
+          <button
+            type="button"
+            onClick={() => setMode('connect')}
+            className="text-left rounded-lg border border-zinc-200 p-6 hover:border-zinc-400 transition-colors space-y-3"
+          >
+            <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
+              <Server className="h-5 w-5 text-blue-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-900">Connect Existing Cluster</h3>
+              <p className="text-xs text-zinc-500 mt-1">
+                Register a cluster you already manage. Install the Kubenest operator via Helm.
+              </p>
+            </div>
+          </button>
 
-              <div className="flex justify-end gap-4">
-                <Button type="button" variant="outline" onClick={() => router.push('/dashboard')} disabled={isSubmitting}>Cancel</Button>
-                <Button type="submit" disabled={isSubmitting}>{isSubmitting ? 'Creating...' : 'Register Cluster'}</Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      </motion.div>
+          <Link
+            href="/clusters/new/provision"
+            className="text-left rounded-lg border border-zinc-200 p-6 hover:border-zinc-400 transition-colors space-y-3"
+          >
+            <div className="h-10 w-10 rounded-lg bg-orange-100 flex items-center justify-center">
+              <Cloud className="h-5 w-5 text-orange-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-900">Provision New Cluster</h3>
+              <p className="text-xs text-zinc-500 mt-1">
+                Create a new managed Kubernetes cluster on AWS using your cloud credentials.
+              </p>
+            </div>
+          </Link>
+        </motion.div>
+      )}
+
+      {/* Connect Existing Form */}
+      {mode === 'connect' && (
+        <motion.div
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          transition={{ duration: 0.4, ease: easeOutQuart }}
+        >
+          <Card className="border-zinc-200">
+            <CardHeader>
+              <CardTitle>Cluster Information</CardTitle>
+              <CardDescription>Provide details about your Kubernetes cluster</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Cluster Name <span className="text-destructive">*</span></Label>
+                  <Input id="name" placeholder="production-us-west" {...register('name')} aria-invalid={!!errors.name} />
+                  {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
+                  <p className="text-xs text-muted-foreground">DNS-compliant name (lowercase, alphanumeric, hyphens only)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="description">Description</Label>
+                  <Input id="description" placeholder="Primary production cluster in US West region" {...register('description')} />
+                </div>
+
+                <div className="flex justify-end gap-4">
+                  <Button type="button" variant="outline" onClick={() => setMode('choose')} disabled={isSubmitting}>Back</Button>
+                  <Button type="submit" disabled={isSubmitting}>{isSubmitting ? 'Creating...' : 'Register Cluster'}</Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
     </div>
   );
 }
