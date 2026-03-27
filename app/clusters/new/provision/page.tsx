@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -9,7 +9,6 @@ import {
   Check,
   Cloud,
   Loader2,
-  Server,
   AlertCircle,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -17,7 +16,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -28,8 +26,7 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { getCloudCredentials } from '@/api/cloud-credentials';
 import { createCluster } from '@/api/clusters';
-import { getProvisioningJobs } from '@/api/provisioning';
-import type { CloudCredential, ProvisioningJob } from '@/types/api';
+import type { CloudCredential } from '@/types/api';
 
 const AWS_REGIONS = [
   'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
@@ -52,7 +49,7 @@ const fadeInUp = {
 };
 const easeOutQuart = [0.25, 1, 0.5, 1] as const;
 
-type WizardStep = 'credential' | 'configure' | 'review' | 'progress';
+type WizardStep = 'credential' | 'configure' | 'review';
 
 interface ProvisionConfig {
   credentialId: string;
@@ -78,7 +75,6 @@ const STEPS: { key: WizardStep; label: string }[] = [
   { key: 'credential', label: 'Credential' },
   { key: 'configure', label: 'Configure' },
   { key: 'review', label: 'Review' },
-  { key: 'progress', label: 'Provisioning' },
 ];
 
 export default function ProvisionClusterPage() {
@@ -90,9 +86,6 @@ export default function ProvisionClusterPage() {
   const [loadingCreds, setLoadingCreds] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [clusterId, setClusterId] = useState<string | null>(null);
-  const [provisioningJob, setProvisioningJob] = useState<ProvisioningJob | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -108,30 +101,6 @@ export default function ProvisionClusterPage() {
     })();
   }, [isAuthenticated]);
 
-  const pollProvisioningStatus = useCallback((clId: string) => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
-      try {
-        const jobs = await getProvisioningJobs(clId);
-        if (jobs.length > 0) {
-          const latest = jobs[0];
-          setProvisioningJob(latest);
-          if (latest.status === 'SUCCEEDED' || latest.status === 'FAILED') {
-            if (pollRef.current) clearInterval(pollRef.current);
-          }
-        }
-      } catch {
-        // silently retry on next interval
-      }
-    }, 3000);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, []);
-
   if (!isAuthenticated) return null;
 
   const stepIndex = STEPS.findIndex((s) => s.key === step);
@@ -144,12 +113,9 @@ export default function ProvisionClusterPage() {
         name: config.clusterName,
         description: config.description || undefined,
       });
-      setClusterId(result.id);
-      setStep('progress');
-      pollProvisioningStatus(result.id);
+      router.push(`/clusters/${result.id}/provisioning`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create cluster');
-    } finally {
       setSubmitting(false);
     }
   }
@@ -168,11 +134,10 @@ export default function ProvisionClusterPage() {
   }
 
   function handleNext() {
-    const idx = stepIndex;
     if (step === 'review') {
       handleSubmit();
-    } else if (idx < STEPS.length - 1) {
-      setStep(STEPS[idx + 1].key);
+    } else if (stepIndex < STEPS.length - 1) {
+      setStep(STEPS[stepIndex + 1].key);
     }
   }
 
@@ -455,119 +420,26 @@ export default function ProvisionClusterPage() {
         </motion.div>
       )}
 
-      {/* Step 4: Provisioning Progress */}
-      {step === 'progress' && (
-        <motion.div
-          variants={fadeInUp}
-          initial="initial"
-          animate="animate"
-          transition={{ duration: 0.4, delay: 0.1, ease: easeOutQuart }}
-        >
-          <Card className="border-zinc-200">
-            <CardHeader>
-              <CardTitle className="text-base">Provisioning Cluster</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                <div className="flex items-center gap-4">
-                  <div className="h-12 w-12 rounded-xl bg-zinc-100 flex items-center justify-center">
-                    {provisioningJob?.status === 'SUCCEEDED' ? (
-                      <Check className="h-6 w-6 text-emerald-600" />
-                    ) : provisioningJob?.status === 'FAILED' ? (
-                      <AlertCircle className="h-6 w-6 text-red-500" />
-                    ) : (
-                      <Loader2 className="h-6 w-6 text-zinc-400 animate-spin" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-zinc-900">
-                      {config.clusterName}
-                    </p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <Badge
-                        className={`text-xs ${
-                          provisioningJob?.status === 'SUCCEEDED'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : provisioningJob?.status === 'FAILED'
-                              ? 'bg-red-100 text-red-700'
-                              : provisioningJob?.status === 'RUNNING'
-                                ? 'bg-blue-100 text-blue-700'
-                                : 'bg-zinc-100 text-zinc-600'
-                        }`}
-                      >
-                        {provisioningJob?.status ?? 'PENDING'}
-                      </Badge>
-                      {provisioningJob && provisioningJob.status !== 'SUCCEEDED' && provisioningJob.status !== 'FAILED' && (
-                        <span className="text-xs text-zinc-400">
-                          {Math.round(provisioningJob.progress_pct)}%
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Progress bar */}
-                <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${
-                      provisioningJob?.status === 'SUCCEEDED'
-                        ? 'bg-emerald-500'
-                        : provisioningJob?.status === 'FAILED'
-                          ? 'bg-red-500'
-                          : 'bg-blue-500'
-                    }`}
-                    style={{ width: `${provisioningJob?.progress_pct ?? 0}%` }}
-                  />
-                </div>
-
-                {provisioningJob?.error_message && (
-                  <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-                    {provisioningJob.error_message}
-                  </div>
-                )}
-
-                {!provisioningJob && (
-                  <p className="text-xs text-zinc-400 text-center">
-                    Waiting for provisioning to start. The cluster has been created and is awaiting infrastructure setup.
-                  </p>
-                )}
-
-                {provisioningJob?.status === 'SUCCEEDED' && clusterId && (
-                  <div className="flex justify-center">
-                    <Button size="sm" onClick={() => router.push(`/clusters/${clusterId}`)}>
-                      <Server className="h-4 w-4 mr-1.5" />
-                      View Cluster
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
-
       {/* Navigation Buttons */}
-      {step !== 'progress' && (
-        <div className="flex justify-between">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleBack}
-            disabled={stepIndex === 0}
-          >
-            <ArrowLeft className="h-4 w-4 mr-1" /> Back
-          </Button>
-          <Button
-            size="sm"
-            onClick={handleNext}
-            disabled={!canProceed() || submitting}
-          >
-            {submitting && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-            {step === 'review' ? 'Provision Cluster' : 'Next'}
-            {step !== 'review' && <ArrowRight className="h-4 w-4 ml-1" />}
-          </Button>
-        </div>
-      )}
+      <div className="flex justify-between">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleBack}
+          disabled={stepIndex === 0}
+        >
+          <ArrowLeft className="h-4 w-4 mr-1" /> Back
+        </Button>
+        <Button
+          size="sm"
+          onClick={handleNext}
+          disabled={!canProceed() || submitting}
+        >
+          {submitting && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+          {step === 'review' ? 'Provision Cluster' : 'Next'}
+          {step !== 'review' && <ArrowRight className="h-4 w-4 ml-1" />}
+        </Button>
+      </div>
     </div>
   );
 }
