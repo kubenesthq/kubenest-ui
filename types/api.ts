@@ -26,7 +26,7 @@ export interface AuthResponse {
 }
 
 // Cluster types
-export type ClusterStatus = 'pending' | 'connected' | 'disconnected' | 'error';
+export type ClusterStatus = 'pending' | 'provisioning' | 'connected' | 'disconnected' | 'error';
 
 export interface Cluster {
   id: string;
@@ -50,6 +50,13 @@ export interface ClusterCreateResponse extends Cluster {
 export interface CreateClusterRequest {
   name: string;
   description?: string;
+  // Provisioning fields (omit for manual/BYOC cluster registration)
+  provider?: CloudProvider;
+  credential_id?: string;
+  region?: string;
+  instance_type?: string;
+  agent_count?: number;
+  disk_size_gb?: number;
 }
 
 // Project types

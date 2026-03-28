@@ -112,6 +112,11 @@ export default function ProvisionClusterPage() {
       const result = await createCluster({
         name: config.clusterName,
         description: config.description || undefined,
+        provider: 'AWS',
+        credential_id: config.credentialId,
+        region: config.region,
+        instance_type: config.instanceType,
+        agent_count: config.nodeCount,
       });
       router.push(`/clusters/${result.id}/provisioning`);
     } catch (err) {
