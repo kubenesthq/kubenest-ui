@@ -12,6 +12,9 @@ import {
   Clock,
   RefreshCw,
   Circle,
+  Terminal,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,7 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { getCluster } from '@/api/clusters';
-import { getProvisioningJobs } from '@/api/provisioning';
+import { getProvisioningJobs, getProvisioningJobLogs } from '@/api/provisioning';
 import type { Cluster, ProvisioningJob, ProvisioningStatus } from '@/types/api';
 
 const fadeInUp = {
@@ -78,6 +81,10 @@ export default function ProvisioningProgressPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState('');
+  const [logs, setLogs] = useState<string | null>(null);
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const logsEndRef = useRef<HTMLDivElement | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -98,6 +105,36 @@ export default function ProvisioningProgressPage() {
       setLoading(false);
     }
   }, [clusterId]);
+
+  const fetchLogs = useCallback(async () => {
+    if (!job) return;
+    setLogsLoading(true);
+    try {
+      const logText = await getProvisioningJobLogs(job.id);
+      setLogs(logText);
+    } catch {
+      // non-fatal
+    } finally {
+      setLogsLoading(false);
+    }
+  }, [job?.id]);
+
+  // Auto-scroll logs to bottom
+  useEffect(() => {
+    if (logsOpen && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs, logsOpen]);
+
+  // Fetch logs when panel is opened, and poll while running
+  useEffect(() => {
+    if (!logsOpen || !job) return;
+    fetchLogs();
+    if (job.status === 'RUNNING') {
+      const logPoll = setInterval(fetchLogs, 5000);
+      return () => clearInterval(logPoll);
+    }
+  }, [logsOpen, job?.status, fetchLogs]);
 
   // Initial fetch + polling
   useEffect(() => {
@@ -352,6 +389,62 @@ export default function ProvisioningProgressPage() {
                 </div>
               </div>
             </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Logs Viewer */}
+      {job && (
+        <motion.div
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          transition={{ duration: 0.4, delay: 0.2, ease: easeOutQuart }}
+        >
+          <Card className="border-zinc-200">
+            <CardHeader className="pb-3">
+              <button
+                className="flex items-center justify-between w-full text-left"
+                onClick={() => setLogsOpen((prev) => !prev)}
+              >
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Terminal className="h-4 w-4 text-zinc-400" />
+                  Provisioning Logs
+                </CardTitle>
+                <div className="flex items-center gap-2">
+                  {logsLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-400" />}
+                  {logsOpen ? (
+                    <ChevronDown className="h-4 w-4 text-zinc-400" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-zinc-400" />
+                  )}
+                </div>
+              </button>
+            </CardHeader>
+            {logsOpen && (
+              <CardContent>
+                {logs ? (
+                  <div className="bg-zinc-950 rounded-md p-4 max-h-96 overflow-auto">
+                    <pre className="text-xs text-zinc-300 font-mono whitespace-pre-wrap break-all leading-relaxed">
+                      {logs}
+                    </pre>
+                    <div ref={logsEndRef} />
+                  </div>
+                ) : logsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
+                  </div>
+                ) : (
+                  <div className="text-center py-6">
+                    <p className="text-xs text-zinc-400">
+                      {job.status === 'PENDING'
+                        ? 'Logs will appear once provisioning starts.'
+                        : 'No logs available.'}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            )}
           </Card>
         </motion.div>
       )}
