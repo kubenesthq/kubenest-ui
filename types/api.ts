@@ -232,6 +232,23 @@ export interface AddonInstanceCreate {
   values?: Record<string, unknown>;
 }
 
+// Registry secret types
+export interface RegistrySecret {
+  id: string;
+  project_id: string;
+  name: string;
+  server_url: string;
+  username: string;
+  created_at: string;
+}
+
+export interface CreateRegistrySecretRequest {
+  name: string;
+  server_url: string;
+  username: string;
+  password: string;
+}
+
 // Specific paginated response types
 export type ClusterListResponse = PaginatedResponse<Cluster>;
 export type ProjectListResponse = PaginatedResponse<Project>;

@@ -5,10 +5,12 @@ import { useRouter, useParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import Link from 'next/link';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, KeyRound } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { ProjectStatusBadge } from '@/components/projects/ProjectStatusBadge';
 import { WorkloadList } from '@/components/workloads/WorkloadList';
 import { AddonInstanceList } from '@/components/addons/AddonInstanceList';
@@ -20,7 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { getProject, deleteProject } from '@/api/projects';
+import { getProject, deleteProject, createRegistrySecret } from '@/api/projects';
 import { getCluster } from '@/api/clusters';
 import {
   getDemoProject, getDemoCluster, deleteDemoProject,
@@ -41,6 +43,10 @@ export default function ProjectDetailPage() {
   const queryClient = useQueryClient();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showRegistryDialog, setShowRegistryDialog] = useState(false);
+  const [registryForm, setRegistryForm] = useState({ name: '', server_url: '', username: '', password: '' });
+  const [registrySaving, setRegistrySaving] = useState(false);
+  const [registryError, setRegistryError] = useState<string | null>(null);
 
   // Try demo project first
   const [demoProject, setDemoProject] = useState<DemoProject | null>(null);
@@ -91,6 +97,21 @@ export default function ProjectDetailPage() {
       router.push('/dashboard');
     } else {
       deleteMutation.mutate(projectId);
+    }
+  };
+
+  const handleRegistrySubmit = async () => {
+    setRegistrySaving(true);
+    setRegistryError(null);
+    try {
+      await createRegistrySecret(projectId, registryForm);
+      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+      setShowRegistryDialog(false);
+      setRegistryForm({ name: '', server_url: '', username: '', password: '' });
+    } catch (err) {
+      setRegistryError(err instanceof Error ? err.message : 'Failed to create registry secret');
+    } finally {
+      setRegistrySaving(false);
     }
   };
 
@@ -183,6 +204,14 @@ export default function ProjectDetailPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowRegistryDialog(true)}
+          >
+            <KeyRound className="h-3.5 w-3.5 mr-1.5" />
+            Add Registry
+          </Button>
           <Button asChild size="sm">
             <Link href={`/projects/${project.id}/workloads/new`}>Deploy Workload</Link>
           </Button>
@@ -370,6 +399,75 @@ export default function ProjectDetailPage() {
             </Button>
             <Button variant="destructive" onClick={handleDelete} disabled={isDeleting}>
               {isDeleting ? 'Deleting...' : 'Delete Project'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showRegistryDialog} onOpenChange={setShowRegistryDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Registry Secret</DialogTitle>
+            <DialogDescription>
+              Add a container registry pull secret to <strong>{project.name}</strong>.
+              The operator will create a Kubernetes docker-registry secret in the namespace.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {registryError && (
+              <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{registryError}</p>
+            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="reg-name">Secret Name</Label>
+              <Input
+                id="reg-name"
+                placeholder="e.g. docker-hub"
+                value={registryForm.name}
+                onChange={(e) => setRegistryForm({ ...registryForm, name: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="reg-url">Registry URL</Label>
+              <Input
+                id="reg-url"
+                placeholder="e.g. https://index.docker.io/v1/"
+                value={registryForm.server_url}
+                onChange={(e) => setRegistryForm({ ...registryForm, server_url: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="reg-user">Username</Label>
+              <Input
+                id="reg-user"
+                placeholder="Registry username"
+                value={registryForm.username}
+                onChange={(e) => setRegistryForm({ ...registryForm, username: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="reg-pass">Password</Label>
+              <Input
+                id="reg-pass"
+                type="password"
+                placeholder="Registry password or token"
+                value={registryForm.password}
+                onChange={(e) => setRegistryForm({ ...registryForm, password: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowRegistryDialog(false)}
+              disabled={registrySaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRegistrySubmit}
+              disabled={registrySaving || !registryForm.name || !registryForm.server_url || !registryForm.username || !registryForm.password}
+            >
+              {registrySaving ? 'Creating...' : 'Add Secret'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,5 +1,5 @@
 import { apiClient } from '@/lib/api-client';
-import type { Project, ProjectListResponse, CreateProjectRequest } from '@/types/api';
+import type { Project, ProjectListResponse, CreateProjectRequest, RegistrySecret, CreateRegistrySecretRequest } from '@/types/api';
 
 export interface ProjectWithDetails extends Project {
   cluster_name?: string;
@@ -24,4 +24,8 @@ export async function createProject(data: CreateProjectRequest): Promise<Project
 
 export async function deleteProject(id: string): Promise<void> {
   return apiClient.delete<void>(`/projects/${id}`);
+}
+
+export async function createRegistrySecret(projectId: string, data: CreateRegistrySecretRequest): Promise<RegistrySecret> {
+  return apiClient.post<RegistrySecret>(`/projects/${projectId}/registry-secrets`, data);
 }
