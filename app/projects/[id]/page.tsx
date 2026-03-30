@@ -22,12 +22,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { getProject, deleteProject, createRegistrySecret } from '@/api/projects';
+import { getProject, deleteProject, createRegistrySecret, getRegistrySecrets } from '@/api/projects';
 import { getCluster } from '@/api/clusters';
 import {
   getDemoProject, getDemoCluster, deleteDemoProject,
   type DemoProject, type DemoCluster,
 } from '@/lib/demo-store';
+
+const K8S_NAME_RE = /^[a-z0-9]([a-z0-9\-.]*[a-z0-9])?$/;
 
 const fadeInUp = {
   initial: { opacity: 0, y: 20 },
@@ -77,6 +79,12 @@ export default function ProjectDetailPage() {
     enabled: !isDemo && !!projectData?.cluster_id,
   });
 
+  const { data: registrySecrets } = useQuery({
+    queryKey: ['registry-secrets', projectId],
+    queryFn: () => getRegistrySecrets(projectId),
+    enabled: demoChecked && !isDemo,
+  });
+
   const deleteMutation = useMutation({
     mutationFn: deleteProject,
     onMutate: () => { setIsDeleting(true); },
@@ -105,7 +113,7 @@ export default function ProjectDetailPage() {
     setRegistryError(null);
     try {
       await createRegistrySecret(projectId, registryForm);
-      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['registry-secrets', projectId] });
       setShowRegistryDialog(false);
       setRegistryForm({ name: '', server_url: '', username: '', password: '' });
     } catch (err) {
@@ -279,106 +287,36 @@ export default function ProjectDetailPage() {
         </Card>
       </motion.div>
 
-      {/* Metadata + Events */}
-      <div className="grid gap-6 md:grid-cols-2">
+      {/* Registry Secrets */}
+      {registrySecrets && registrySecrets.length > 0 && (
         <motion.div
           variants={fadeInUp}
           initial="initial"
           animate="animate"
-          transition={{ duration: 0.4, delay: 0.3, ease: easeOutQuart }}
+          transition={{ duration: 0.4, delay: 0.28, ease: easeOutQuart }}
         >
           <Card className="border-zinc-200">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold text-zinc-900">
-                Project Details
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {[
-                {
-                  label: 'Namespace',
-                  value: (
-                    <code className="text-xs bg-zinc-100 text-zinc-700 px-2 py-1 rounded font-mono">
-                      {project.namespace}
-                    </code>
-                  ),
-                },
-                {
-                  label: 'Cluster',
-                  value: cluster ? (
-                    <Link
-                      href={`/clusters/${cluster.id}`}
-                      className="text-sm text-blue-600 hover:underline"
-                    >
-                      {cluster.name}
-                    </Link>
-                  ) : (
-                    <span className="text-sm text-zinc-400">Unknown</span>
-                  ),
-                },
-                {
-                  label: 'Status',
-                  value: <ProjectStatusBadge status={project.status as any} />,
-                },
-                {
-                  label: 'Created',
-                  value: (
-                    <span className="text-sm text-zinc-700">
-                      {format(new Date(project.created_at), 'PPpp')}
-                    </span>
-                  ),
-                },
-              ].map(({ label, value }) => (
-                <div key={label}>
-                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-400 mb-1.5">
-                    {label}
-                  </p>
-                  {value}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div
-          variants={fadeInUp}
-          initial="initial"
-          animate="animate"
-          transition={{ duration: 0.4, delay: 0.36, ease: easeOutQuart }}
-        >
-          <Card className="border-zinc-200">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold text-zinc-900">
-                Status Events
-              </CardTitle>
+              <CardTitle className="text-base font-semibold text-zinc-900">Registry Secrets</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                <div className="flex items-start gap-3 text-sm">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
-                  <div>
-                    <p className="font-medium text-zinc-900">Project created</p>
-                    <p className="text-xs text-zinc-400 mt-0.5">
-                      {format(new Date(project.created_at), 'PPpp')}
-                    </p>
-                  </div>
-                </div>
-                {project.updated_at && project.updated_at !== project.created_at && (
-                  <div className="flex items-start gap-3 text-sm">
-                    <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 shrink-0" />
-                    <div>
-                      <p className="font-medium text-zinc-900">Project updated</p>
-                      <p className="text-xs text-zinc-400 mt-0.5">
-                        {format(new Date(project.updated_at), 'PPpp')}
-                      </p>
+              <div className="divide-y divide-zinc-100">
+                {registrySecrets.map((secret) => (
+                  <div key={secret.id} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
+                    <div className="flex items-center gap-3">
+                      <KeyRound className="h-4 w-4 text-zinc-400" />
+                      <div>
+                        <p className="text-sm font-medium text-zinc-900">{secret.name}</p>
+                        <p className="text-xs text-zinc-500">{secret.server_url} &middot; {secret.username}</p>
+                      </div>
                     </div>
                   </div>
-                )}
+                ))}
               </div>
             </CardContent>
           </Card>
         </motion.div>
-      </div>
+      )}
 
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent>
@@ -425,6 +363,11 @@ export default function ProjectDetailPage() {
                 value={registryForm.name}
                 onChange={(e) => setRegistryForm({ ...registryForm, name: e.target.value })}
               />
+              {registryForm.name && !K8S_NAME_RE.test(registryForm.name) && (
+                <p className="text-xs text-red-500 mt-1">
+                  Lowercase letters, numbers, hyphens, and dots only. Must start and end with alphanumeric.
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="reg-url">Registry URL</Label>
@@ -465,7 +408,7 @@ export default function ProjectDetailPage() {
             </Button>
             <Button
               onClick={handleRegistrySubmit}
-              disabled={registrySaving || !registryForm.name || !registryForm.server_url || !registryForm.username || !registryForm.password}
+              disabled={registrySaving || !registryForm.name || !K8S_NAME_RE.test(registryForm.name) || !registryForm.server_url || !registryForm.username || !registryForm.password}
             >
               {registrySaving ? 'Creating...' : 'Add Secret'}
             </Button>
