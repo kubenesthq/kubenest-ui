@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { getProject } from '@/api/projects';
 import { WORKLOAD_LIMITS } from '@/lib/constants/workloads';
-import { createDemoWorkload } from '@/lib/demo-store';
+import { workloadsApi } from '@/lib/api/workloads';
 
 const fadeInUp = {
   initial: { opacity: 0, y: 20 },
@@ -115,25 +115,27 @@ export default function NewWorkloadPage() {
       });
     }
 
-    const workload = createDemoWorkload({
-      project_id: projectId,
-      name: data.name,
-      source_type: sourceType,
-      image: sourceType === 'image'
-        ? `${data.image}${data.imageTag ? ':' + data.imageTag : ''}`
-        : undefined,
-      git_repo: sourceType === 'git' ? data.gitRepo : undefined,
-      git_branch: sourceType === 'git' ? (data.gitBranch || 'main') : undefined,
-      dockerfile_path: sourceType === 'git' ? (data.dockerfilePath || 'Dockerfile') : undefined,
-      replicas: data.replicas,
-      port: data.port ?? undefined,
-      env: Object.keys(envMap).length > 0 ? envMap : undefined,
-    });
+    try {
+      const workload = await workloadsApi.create({
+        project_id: projectId,
+        name: data.name,
+        image: sourceType === 'image'
+          ? `${data.image}${data.imageTag ? ':' + data.imageTag : ''}`
+          : undefined,
+        git_source: sourceType === 'git' ? data.gitRepo : undefined,
+        replicas: data.replicas,
+        port: data.port ?? undefined,
+      });
 
-    setDeployed(true);
-    setTimeout(() => {
-      router.push(`/demo-workloads/${workload.id}`);
-    }, 1500);
+      setDeployed(true);
+      setTimeout(() => {
+        router.push(`/projects/${projectId}`);
+      }, 1500);
+    } catch (err) {
+      setError('root', {
+        message: err instanceof Error ? err.message : 'Failed to deploy workload',
+      });
+    }
   };
 
   if (deployed) {

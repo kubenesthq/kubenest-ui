@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Form, FormField } from '@/components/ui/form';
-import { getDemoCluster, createDemoProject, type DemoCluster } from '@/lib/demo-store';
+import { createProject } from '@/api/projects';
 
 const fadeInUp = {
   initial: { opacity: 0, y: 20 },
@@ -42,30 +42,32 @@ export default function NewProjectPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [created, setCreated] = useState(false);
   const [projectName, setProjectName] = useState('');
-  const [cluster, setCluster] = useState<DemoCluster | null>(null);
-
-  useEffect(() => {
-    setCluster(getDemoCluster(clusterId));
-  }, [clusterId]);
+  const [error, setError] = useState<string | null>(null);
 
   const form = useForm<CreateProjectFormData>({
     resolver: zodResolver(createProjectSchema),
     defaultValues: { name: '', description: '', registry_secret: '' },
   });
 
-  const onSubmit = (data: CreateProjectFormData) => {
+  const onSubmit = async (data: CreateProjectFormData) => {
     setIsSubmitting(true);
-    const project = createDemoProject({
-      cluster_id: clusterId,
-      name: data.name,
-      description: data.description,
-      registry_secret: data.registry_secret || undefined,
-    });
-    setProjectName(data.name);
-    setCreated(true);
-    setTimeout(() => {
-      router.push(`/projects/${project.id}`);
-    }, 1500);
+    setError(null);
+    try {
+      const project = await createProject({
+        cluster_id: clusterId,
+        name: data.name,
+        description: data.description,
+        registry_secret: data.registry_secret || undefined,
+      });
+      setProjectName(data.name);
+      setCreated(true);
+      setTimeout(() => {
+        router.push(`/projects/${project.id}`);
+      }, 1500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create project');
+      setIsSubmitting(false);
+    }
   };
 
   if (created) {
@@ -95,7 +97,7 @@ export default function NewProjectPage() {
         <Button variant="ghost" size="sm" asChild className="h-7 px-2 text-zinc-400 hover:text-zinc-700 -ml-2">
           <Link href={`/clusters/${clusterId}`}>
             <ArrowLeft className="h-3.5 w-3.5 mr-1.5" />
-            {cluster?.name ?? 'Cluster'}
+            Cluster
           </Link>
         </Button>
       </motion.div>
@@ -125,6 +127,12 @@ export default function NewProjectPage() {
                 <Input {...form.register('registry_secret')} placeholder="my-registry-secret" disabled={isSubmitting} />
                 <p className="text-xs text-muted-foreground mt-1">Kubernetes secret name for pulling images from a private registry</p>
               </FormField>
+
+              {error && (
+                <div className="rounded-lg bg-red-50 border border-red-200 p-4">
+                  <p className="text-sm text-destructive">{error}</p>
+                </div>
+              )}
 
               <div className="flex justify-end gap-3 mt-6">
                 <Button type="button" variant="outline" onClick={() => router.push(`/clusters/${clusterId}`)} disabled={isSubmitting}>Cancel</Button>
