@@ -115,6 +115,9 @@ export default function NewWorkloadPage() {
       });
     }
 
+    // Build env array from parsed map
+    const envArray = Object.entries(envMap).map(([name, value]) => ({ name, value }));
+
     try {
       const workload = await workloadsApi.create({
         project_id: projectId,
@@ -125,6 +128,7 @@ export default function NewWorkloadPage() {
         git_source: sourceType === 'git' ? data.gitRepo : undefined,
         replicas: data.replicas,
         port: data.port ?? undefined,
+        env: envArray.length > 0 ? envArray : undefined,
       });
 
       setDeployed(true);

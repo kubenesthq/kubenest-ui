@@ -135,6 +135,7 @@ export interface CreateWorkloadRequest {
   ingress?: IngressConfig;
   chart?: ChartSpec;
   values?: Record<string, unknown>;
+  env?: Array<{ name: string; value: string }>;
 }
 
 export interface WorkloadUpdateRequest {
