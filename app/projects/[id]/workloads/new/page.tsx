@@ -63,6 +63,8 @@ export default function NewWorkloadPage() {
   const projectId = params.id as string;
   const [sourceType, setSourceType] = useState<SourceType>('image');
   const [deployed, setDeployed] = useState(false);
+  const [ingressEnabled, setIngressEnabled] = useState(false);
+  const [ingressHost, setIngressHost] = useState('');
 
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
@@ -129,6 +131,13 @@ export default function NewWorkloadPage() {
         replicas: data.replicas,
         port: data.port ?? undefined,
         env: envArray.length > 0 ? envArray : undefined,
+        ingress: ingressEnabled && ingressHost ? {
+          enabled: true,
+          host: ingressHost,
+          path: '/',
+          tls_secret: null,
+          annotations: null,
+        } : undefined,
       });
 
       setDeployed(true);
@@ -392,6 +401,38 @@ export default function NewWorkloadPage() {
                     )}
                   </div>
                 </div>
+              </div>
+
+              {/* Ingress */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="ingressEnabled"
+                    checked={ingressEnabled}
+                    onChange={(e) => setIngressEnabled(e.target.checked)}
+                    disabled={isSubmitting}
+                    className="h-4 w-4 rounded border-zinc-300"
+                  />
+                  <Label htmlFor="ingressEnabled" className="cursor-pointer">
+                    Expose via Ingress
+                  </Label>
+                </div>
+                {ingressEnabled && (
+                  <div className="space-y-2 pl-7">
+                    <Label htmlFor="ingressHost">Hostname</Label>
+                    <Input
+                      id="ingressHost"
+                      placeholder="app.example.com"
+                      value={ingressHost}
+                      onChange={(e) => setIngressHost(e.target.value)}
+                      disabled={isSubmitting}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      The domain name to route traffic to this workload
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Environment Variables */}
