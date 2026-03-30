@@ -70,6 +70,12 @@ const statusColors: Record<ProvisioningStatus, string> = {
 
 const POLL_INTERVAL = 3000;
 
+// Strip ANSI escape sequences (colors, cursor moves, etc.)
+function stripAnsi(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+}
+
 export default function ProvisioningProgressPage() {
   const router = useRouter();
   const params = useParams();
@@ -84,7 +90,7 @@ export default function ProvisioningProgressPage() {
   const [logs, setLogs] = useState<string | null>(null);
   const [logsOpen, setLogsOpen] = useState(false);
   const [logsLoading, setLogsLoading] = useState(false);
-  const logsEndRef = useRef<HTMLDivElement | null>(null);
+  const logsContainerRef = useRef<HTMLDivElement | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -111,7 +117,7 @@ export default function ProvisioningProgressPage() {
     setLogsLoading(true);
     try {
       const logText = await getProvisioningJobLogs(job.id);
-      setLogs(logText);
+      setLogs(logText ? stripAnsi(logText) : null);
     } catch {
       // non-fatal
     } finally {
@@ -121,8 +127,9 @@ export default function ProvisioningProgressPage() {
 
   // Auto-scroll logs to bottom
   useEffect(() => {
-    if (logsOpen && logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (logsOpen && logsContainerRef.current) {
+      const el = logsContainerRef.current;
+      el.scrollTop = el.scrollHeight;
     }
   }, [logs, logsOpen]);
 
@@ -424,11 +431,10 @@ export default function ProvisioningProgressPage() {
             {logsOpen && (
               <CardContent>
                 {logs ? (
-                  <div className="bg-zinc-950 rounded-md p-4 max-h-96 overflow-auto">
-                    <pre className="text-xs text-zinc-300 font-mono whitespace-pre-wrap break-all leading-relaxed">
+                  <div ref={logsContainerRef} className="bg-zinc-950 rounded-md p-4 max-h-[32rem] overflow-y-auto overflow-x-auto">
+                    <pre className="text-xs text-zinc-300 font-mono whitespace-pre-wrap break-words leading-relaxed">
                       {logs}
                     </pre>
-                    <div ref={logsEndRef} />
                   </div>
                 ) : logsLoading ? (
                   <div className="flex items-center justify-center py-8">
