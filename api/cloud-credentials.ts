@@ -6,22 +6,22 @@ import type {
   CloudCredentialListResponse,
 } from '@/types/api';
 
-export async function getCloudCredentials(): Promise<CloudCredentialListResponse> {
-  return apiClient.get<CloudCredentialListResponse>('/cloud-credentials');
+export async function getCloudCredentials(orgId: string): Promise<CloudCredentialListResponse> {
+  return apiClient.get<CloudCredentialListResponse>(`/orgs/${orgId}/credentials`);
 }
 
 export async function getCloudCredential(id: string): Promise<CloudCredential> {
-  return apiClient.get<CloudCredential>(`/cloud-credentials/${id}`);
+  return apiClient.get<CloudCredential>(`/credentials/${id}`);
 }
 
-export async function createCloudCredential(data: CloudCredentialCreate): Promise<CloudCredential> {
-  return apiClient.post<CloudCredential>('/cloud-credentials', data);
+export async function createCloudCredential(orgId: string, data: CloudCredentialCreate): Promise<CloudCredential> {
+  return apiClient.post<CloudCredential>(`/orgs/${orgId}/credentials`, data);
 }
 
 export async function updateCloudCredential(id: string, data: CloudCredentialUpdate): Promise<CloudCredential> {
-  return apiClient.patch<CloudCredential>(`/cloud-credentials/${id}`, data);
+  return apiClient.patch<CloudCredential>(`/credentials/${id}`, data);
 }
 
 export async function deleteCloudCredential(id: string): Promise<void> {
-  return apiClient.delete<void>(`/cloud-credentials/${id}`);
+  return apiClient.delete<void>(`/credentials/${id}`);
 }

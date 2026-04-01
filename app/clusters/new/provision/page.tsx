@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAuth } from '@/hooks/useAuth';
+import { useCurrentOrg } from '@/hooks/useOrganization';
 import { getCloudCredentials } from '@/api/cloud-credentials';
 import { createCluster } from '@/api/clusters';
 import type { CloudCredential } from '@/types/api';
@@ -80,6 +81,7 @@ const STEPS: { key: WizardStep; label: string }[] = [
 export default function ProvisionClusterPage() {
   const router = useRouter();
   const { isAuthenticated } = useAuth(true);
+  const { orgId } = useCurrentOrg();
   const [step, setStep] = useState<WizardStep>('credential');
   const [config, setConfig] = useState<ProvisionConfig>(defaultConfig);
   const [credentials, setCredentials] = useState<CloudCredential[]>([]);
@@ -91,7 +93,7 @@ export default function ProvisionClusterPage() {
     if (!isAuthenticated) return;
     (async () => {
       try {
-        const res = await getCloudCredentials();
+        const res = await getCloudCredentials(orgId!);
         setCredentials(res.data);
       } catch {
         setError('Failed to load cloud credentials');
@@ -109,7 +111,7 @@ export default function ProvisionClusterPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const result = await createCluster({
+      const result = await createCluster(orgId!, {
         name: config.clusterName,
         description: config.description || undefined,
         provider: 'AWS',

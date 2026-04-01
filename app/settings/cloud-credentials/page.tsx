@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAuth } from '@/hooks/useAuth';
+import { useCurrentOrg } from '@/hooks/useOrganization';
 import {
   getCloudCredentials,
   createCloudCredential,
@@ -52,6 +53,7 @@ const emptyForm: FormData = {
 
 export default function CloudCredentialsPage() {
   const { isAuthenticated } = useAuth(true);
+  const { orgId } = useCurrentOrg();
   const [credentials, setCredentials] = useState<CloudCredential[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -63,7 +65,7 @@ export default function CloudCredentialsPage() {
   const fetchCredentials = useCallback(async () => {
     try {
       setError(null);
-      const res = await getCloudCredentials();
+      const res = await getCloudCredentials(orgId!);
       setCredentials(res.data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load credentials');
@@ -94,7 +96,7 @@ export default function CloudCredentialsPage() {
         if (form.secret_access_key) update.secret_access_key = form.secret_access_key;
         await updateCloudCredential(editingId, update);
       } else {
-        await createCloudCredential({
+        await createCloudCredential(orgId!, {
           name: form.name,
           provider: form.provider,
           access_key_id: form.access_key_id,

@@ -8,17 +8,17 @@ import type {
 } from '@/types/api';
 
 export const clustersApi = {
-  // List all clusters
-  list: () => apiClient.get<ClusterListResponse>('/clusters'),
+  // List all clusters in an org
+  list: (orgId: string) => apiClient.get<ClusterListResponse>(`/orgs/${orgId}/clusters`),
 
-  // Get single cluster
+  // Get single cluster (flat, access checked server-side)
   get: (id: string) => apiClient.get<Cluster>(`/clusters/${id}`),
 
-  // Create cluster
-  create: (data: ClusterCreateRequest) =>
-    apiClient.post<ClusterCreateResponse>('/clusters', data),
+  // Create cluster under an org
+  create: (orgId: string, data: ClusterCreateRequest) =>
+    apiClient.post<ClusterCreateResponse>(`/orgs/${orgId}/clusters`, data),
 
-  // Delete cluster
+  // Delete cluster (flat, access checked server-side)
   delete: (id: string) => apiClient.delete<void>(`/clusters/${id}`),
 
   // Get projects for a cluster

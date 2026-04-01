@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { createCluster } from '@/api/clusters';
+import { useCurrentOrg } from '@/hooks/useOrganization';
 import { useState } from 'react';
 
 const fadeInUp = {
@@ -41,6 +42,7 @@ type Mode = 'choose' | 'connect';
 export default function NewClusterPage() {
   const router = useRouter();
   const { isAuthenticated } = useAuth(true);
+  const { orgId } = useCurrentOrg();
   const [mode, setMode] = useState<Mode>('choose');
   const [created, setCreated] = useState(false);
   const [clusterName, setClusterName] = useState('');
@@ -57,7 +59,7 @@ export default function NewClusterPage() {
   const onSubmit = async (data: ClusterFormData) => {
     setError(null);
     try {
-      const cluster = await createCluster({
+      const cluster = await createCluster(orgId!, {
         name: data.name,
         description: data.description,
       });

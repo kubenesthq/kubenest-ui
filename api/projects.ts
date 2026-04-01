@@ -30,6 +30,10 @@ export async function getRegistrySecrets(projectId: string): Promise<RegistrySec
   return apiClient.get<RegistrySecret[]>(`/projects/${projectId}/registry-secrets`);
 }
 
+export async function getEffectiveRegistrySecrets(projectId: string): Promise<RegistrySecret[]> {
+  return apiClient.get<RegistrySecret[]>(`/projects/${projectId}/effective-registry-secrets`);
+}
+
 export async function createRegistrySecret(projectId: string, data: CreateRegistrySecretRequest): Promise<RegistrySecret> {
   return apiClient.post<RegistrySecret>(`/projects/${projectId}/registry-secrets`, data);
 }

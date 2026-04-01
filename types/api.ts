@@ -25,6 +25,33 @@ export interface AuthResponse {
   token_type: string;
 }
 
+// Organization types
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  role?: string;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface OrgMember {
+  org_id: string;
+  user_id: number;
+  role: 'admin' | 'member' | 'viewer';
+  created_at: string;
+}
+
+export interface OrgMemberCreate {
+  user_id: number;
+  role?: 'admin' | 'member' | 'viewer';
+}
+
+export interface OrganizationCreate {
+  name: string;
+  slug: string;
+}
+
 // Cluster types
 export type ClusterStatus = 'pending' | 'provisioning' | 'connected' | 'disconnected' | 'error';
 
@@ -33,6 +60,7 @@ export interface Cluster {
   name: string;
   description: string | null;
   status: ClusterStatus;
+  org_id: string | null;
   kubernetes_version: string | null;
   node_count: number | null;
   last_heartbeat: string | null;
@@ -234,12 +262,17 @@ export interface AddonInstanceCreate {
 }
 
 // Registry secret types
+export type RegistrySecretScope = 'org' | 'cluster' | 'project';
+
 export interface RegistrySecret {
   id: string;
-  project_id: string;
   name: string;
   server_url: string;
   username: string;
+  scope: RegistrySecretScope;
+  org_id: string | null;
+  cluster_id: string | null;
+  project_id: string | null;
   created_at: string;
 }
 
@@ -266,6 +299,7 @@ export interface CloudCredential {
   provider: CloudProvider;
   region: string;
   access_key_id: string;
+  org_id: string | null;
   created_at: string;
   updated_at: string | null;
 }
