@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { LayoutDashboard, Server, Plus, LogOut, Package, Layers, BookTemplate, Users, Shield, Key, Settings } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { cn } from '@/lib/utils';
+import { OrgSwitcher } from './OrgSwitcher';
 
 const mainNav = [
   {
@@ -120,6 +121,11 @@ export function AppSidebar() {
           <Server className="h-3.5 w-3.5 text-white" />
         </div>
         <span className="font-semibold text-sm text-zinc-900 tracking-tight">KubeNest</span>
+      </div>
+
+      {/* Org Switcher */}
+      <div className="px-2 py-2 border-b border-zinc-100 shrink-0">
+        <OrgSwitcher />
       </div>
 
       {/* Nav */}

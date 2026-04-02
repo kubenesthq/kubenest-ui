@@ -11,10 +11,12 @@ interface AuthState {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
+  activeOrgId: string | null;
   login: (token: string, user: User) => void;
   logout: () => void;
   setUser: (user: User) => void;
   setToken: (token: string) => void;
+  setActiveOrgId: (orgId: string) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -23,6 +25,7 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       token: null,
       isAuthenticated: false,
+      activeOrgId: null,
       login: (token, user) => {
         if (typeof window !== 'undefined') {
           localStorage.setItem('token', token);
@@ -33,7 +36,7 @@ export const useAuthStore = create<AuthState>()(
         if (typeof window !== 'undefined') {
           localStorage.removeItem('token');
         }
-        set({ token: null, user: null, isAuthenticated: false });
+        set({ token: null, user: null, isAuthenticated: false, activeOrgId: null });
       },
       setUser: (user) => set({ user }),
       setToken: (token) => {
@@ -42,6 +45,7 @@ export const useAuthStore = create<AuthState>()(
         }
         set({ token });
       },
+      setActiveOrgId: (orgId) => set({ activeOrgId: orgId }),
     }),
     {
       name: 'auth-storage',
