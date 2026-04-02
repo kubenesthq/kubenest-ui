@@ -10,6 +10,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { ClusterStatusBadge } from '@/components/clusters/ClusterStatusBadge';
+import { ClusterComponentsCard } from '@/components/clusters/ClusterComponentsCard';
 import { useCluster, useClusterProjects, useDeleteCluster } from '@/hooks/useClusters';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -156,6 +157,13 @@ export default function ClusterDetailPage() {
           </CardContent>
         </Card>
       </motion.div>
+
+      {/* Components Card */}
+      {!isDemo && (
+        <motion.div variants={fadeInUp} initial="initial" animate="animate" transition={{ duration: 0.4, delay: 0.15, ease: easeOutQuart }}>
+          <ClusterComponentsCard clusterId={clusterId} />
+        </motion.div>
+      )}
 
       {/* Projects Card */}
       <motion.div variants={fadeInUp} initial="initial" animate="animate" transition={{ duration: 0.4, delay: 0.2, ease: easeOutQuart }}>

@@ -95,6 +95,13 @@ export const apiClient = {
       body: JSON.stringify(data)
     }),
 
+  put: <T>(url: string, data: unknown, options?: RequestOptions): Promise<T> =>
+    fetchWithAuth(url, {
+      ...options,
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }),
+
   delete: <T>(url: string, options?: RequestOptions): Promise<T> =>
     fetchWithAuth(url, { ...options, method: 'DELETE' }),
 };
