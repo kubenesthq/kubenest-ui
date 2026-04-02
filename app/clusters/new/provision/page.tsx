@@ -27,7 +27,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useCurrentOrg } from '@/hooks/useOrganization';
 import { getCloudCredentials } from '@/api/cloud-credentials';
 import { createCluster } from '@/api/clusters';
-import type { CloudCredential } from '@/types/api';
+import type { CloudCredential, ComponentsConfig } from '@/types/api';
+import { ComponentSelector } from '@/components/clusters/ComponentSelector';
 
 const AWS_REGIONS = [
   'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
@@ -50,7 +51,7 @@ const fadeInUp = {
 };
 const easeOutQuart = [0.25, 1, 0.5, 1] as const;
 
-type WizardStep = 'credential' | 'configure' | 'review';
+type WizardStep = 'credential' | 'configure' | 'components' | 'review';
 
 interface ProvisionConfig {
   credentialId: string;
@@ -60,7 +61,15 @@ interface ProvisionConfig {
   nodeCount: number;
   clusterName: string;
   description: string;
+  components: ComponentsConfig;
 }
+
+const defaultComponents: ComponentsConfig = {
+  storage: false,
+  ha: false,
+  build: false,
+  monitoring: { enabled: false },
+};
 
 const defaultConfig: ProvisionConfig = {
   credentialId: '',
@@ -70,11 +79,13 @@ const defaultConfig: ProvisionConfig = {
   nodeCount: 3,
   clusterName: '',
   description: '',
+  components: defaultComponents,
 };
 
 const STEPS: { key: WizardStep; label: string }[] = [
   { key: 'credential', label: 'Credential' },
   { key: 'configure', label: 'Configure' },
+  { key: 'components', label: 'Components' },
   { key: 'review', label: 'Review' },
 ];
 
@@ -119,6 +130,7 @@ export default function ProvisionClusterPage() {
         region: config.region,
         instance_type: config.instanceType,
         agent_count: config.nodeCount,
+        components: config.components,
       });
       router.push(`/clusters/${result.id}/provisioning`);
     } catch (err) {
@@ -133,6 +145,8 @@ export default function ProvisionClusterPage() {
         return !!config.credentialId;
       case 'configure':
         return !!config.clusterName && config.clusterName.length >= 3 && config.nodeCount >= 1;
+      case 'components':
+        return true; // All components are optional
       case 'review':
         return true;
       default:
@@ -371,7 +385,32 @@ export default function ProvisionClusterPage() {
         </motion.div>
       )}
 
-      {/* Step 3: Review */}
+      {/* Step 3: Components */}
+      {step === 'components' && (
+        <motion.div
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          transition={{ duration: 0.4, delay: 0.1, ease: easeOutQuart }}
+        >
+          <Card className="border-zinc-200">
+            <CardHeader>
+              <CardTitle className="text-base">Platform Components</CardTitle>
+              <p className="text-xs text-zinc-500 mt-1">
+                Select optional components to install on your cluster. All can be changed later.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <ComponentSelector
+                value={config.components}
+                onChange={(components) => setConfig({ ...config, components })}
+              />
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Step 4: Review */}
       {step === 'review' && (
         <motion.div
           variants={fadeInUp}
@@ -417,6 +456,29 @@ export default function ProvisionClusterPage() {
                     )}
                   </div>
                 </div>
+
+                {/* Components summary */}
+                {(config.components.storage || config.components.ha || config.components.build || config.components.monitoring.enabled) && (
+                  <div className="border-t border-zinc-100 pt-4">
+                    <p className="text-xs text-zinc-400 mb-2">Components</p>
+                    <div className="flex flex-wrap gap-2">
+                      {config.components.storage && (
+                        <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-medium">Storage (Longhorn)</span>
+                      )}
+                      {config.components.ha && (
+                        <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium">High Availability</span>
+                      )}
+                      {config.components.build && (
+                        <span className="px-2.5 py-1 rounded-full bg-orange-50 text-orange-700 text-xs font-medium">Image Builds</span>
+                      )}
+                      {config.components.monitoring.enabled && (
+                        <span className="px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 text-xs font-medium">
+                          Monitoring{config.components.monitoring.provider ? ` (${config.components.monitoring.provider})` : ''}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 <div className="rounded-md bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-700">
                   This will provision infrastructure on your AWS account. You will be billed by AWS for the resources created.

@@ -55,6 +55,20 @@ export interface OrganizationCreate {
 // Cluster types
 export type ClusterStatus = 'pending' | 'provisioning' | 'connected' | 'disconnected' | 'error';
 
+export interface MonitoringConfig {
+  enabled: boolean;
+  provider?: string | null;
+  remote_write_url?: string | null;
+  credentials_secret?: string | null;
+}
+
+export interface ComponentsConfig {
+  storage: boolean;
+  ha: boolean;
+  build: boolean;
+  monitoring: MonitoringConfig;
+}
+
 export interface Cluster {
   id: string;
   name: string;
@@ -68,6 +82,7 @@ export interface Cluster {
   created_at: string;
   base_domain: string | null;
   enterprise_domain: string | null;
+  components?: ComponentsConfig | null;
 }
 
 export interface ClusterCreateResponse extends Cluster {
@@ -85,6 +100,8 @@ export interface CreateClusterRequest {
   instance_type?: string;
   agent_count?: number;
   disk_size_gb?: number;
+  // Component selection
+  components?: ComponentsConfig;
 }
 
 // Project types

@@ -14,6 +14,8 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { createCluster } from '@/api/clusters';
 import { useCurrentOrg } from '@/hooks/useOrganization';
+import { ComponentSelector } from '@/components/clusters/ComponentSelector';
+import type { ComponentsConfig } from '@/types/api';
 import { useState } from 'react';
 
 const fadeInUp = {
@@ -47,6 +49,10 @@ export default function NewClusterPage() {
   const [created, setCreated] = useState(false);
   const [clusterName, setClusterName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [components, setComponents] = useState<ComponentsConfig>({
+    storage: false, ha: false, build: false,
+    monitoring: { enabled: false },
+  });
 
   const {
     register,
@@ -62,6 +68,7 @@ export default function NewClusterPage() {
       const cluster = await createCluster(orgId!, {
         name: data.name,
         description: data.description,
+        components,
       });
       setClusterName(data.name);
       setCreated(true);
@@ -195,6 +202,11 @@ export default function NewClusterPage() {
                 <div className="space-y-2">
                   <Label htmlFor="description">Description</Label>
                   <Input id="description" placeholder="Primary production cluster in US West region" {...register('description')} />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Platform Components <span className="text-xs text-zinc-400 font-normal">(optional)</span></Label>
+                  <ComponentSelector value={components} onChange={setComponents} />
                 </div>
 
                 <div className="flex justify-end gap-4">
