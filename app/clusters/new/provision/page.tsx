@@ -101,10 +101,10 @@ export default function ProvisionClusterPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !orgId) return;
     (async () => {
       try {
-        const res = await getCloudCredentials(orgId!);
+        const res = await getCloudCredentials(orgId);
         setCredentials(res.data);
       } catch {
         setError('Failed to load cloud credentials');
@@ -112,7 +112,7 @@ export default function ProvisionClusterPage() {
         setLoadingCreds(false);
       }
     })();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, orgId]);
 
   if (!isAuthenticated) return null;
 

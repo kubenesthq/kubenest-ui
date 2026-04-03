@@ -63,20 +63,21 @@ export default function CloudCredentialsPage() {
   const [form, setForm] = useState<FormData>(emptyForm);
 
   const fetchCredentials = useCallback(async () => {
+    if (!orgId) return;
     try {
       setError(null);
-      const res = await getCloudCredentials(orgId!);
+      const res = await getCloudCredentials(orgId);
       setCredentials(res.data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load credentials');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [orgId]);
 
   useEffect(() => {
-    if (isAuthenticated) fetchCredentials();
-  }, [isAuthenticated, fetchCredentials]);
+    if (isAuthenticated && orgId) fetchCredentials();
+  }, [isAuthenticated, orgId, fetchCredentials]);
 
   if (!isAuthenticated) return null;
 
