@@ -16,6 +16,7 @@ export interface UserRead {
   email: string;
   profile_image_url: string;
   tier_id: number | null;
+  is_superadmin: boolean;
 }
 
 export interface LoginData {

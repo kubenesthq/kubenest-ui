@@ -42,6 +42,7 @@ function LoginForm() {
         id: String(user.id),
         email: user.email,
         name: user.name,
+        is_superadmin: user.is_superadmin,
       });
       router.push('/');
     } catch (err) {

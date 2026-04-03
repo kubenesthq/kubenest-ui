@@ -28,7 +28,7 @@ export function useAuth(requireAuth = false) {
           setToken(data.access_token);
           try {
             const me = await getCurrentUser();
-            login(data.access_token, { id: String(me.id), email: me.email, name: me.name });
+            login(data.access_token, { id: String(me.id), email: me.email, name: me.name, is_superadmin: me.is_superadmin });
           } catch {
             // Token works but user fetch failed — still set authenticated
             useAuthStore.setState({ isAuthenticated: true });
