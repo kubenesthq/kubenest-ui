@@ -9,16 +9,19 @@ import { ProjectList } from '@/components/projects/ProjectList';
 import { ClusterFilter } from '@/components/projects/ClusterFilter';
 import { getClusters } from '@/api/clusters';
 import { getProjects, deleteProject } from '@/api/projects';
+import { useCurrentOrg } from '@/hooks/useOrganization';
 
 export default function ProjectsPage() {
   const [selectedCluster, setSelectedCluster] = useState('all');
   const [deletingId, setDeletingId] = useState<string | undefined>();
   const queryClient = useQueryClient();
+  const { orgId } = useCurrentOrg();
 
   // Fetch clusters for filter
   const { data: clustersData, isLoading: clustersLoading } = useQuery({
-    queryKey: ['clusters'],
-    queryFn: getClusters,
+    queryKey: ['clusters', orgId],
+    queryFn: () => getClusters(orgId!),
+    enabled: !!orgId,
   });
 
   // Fetch all projects (we'll filter client-side for now)

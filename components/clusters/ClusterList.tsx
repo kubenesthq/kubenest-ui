@@ -17,14 +17,17 @@ import { ClusterStatusBadge } from './ClusterStatusBadge';
 import { clustersApi } from '@/lib/api/clusters';
 import { getConnectionStatus } from '@/types/api';
 import { getDemoClusters, type DemoCluster } from '@/lib/demo-store';
+import { useCurrentOrg } from '@/hooks/useOrganization';
 
 const MotionTableRow = motion(TableRow);
 
 export function ClusterList() {
   const router = useRouter();
+  const { orgId } = useCurrentOrg();
   const { data, isLoading, error } = useQuery({
-    queryKey: ['clusters'],
-    queryFn: clustersApi.list,
+    queryKey: ['clusters', orgId],
+    queryFn: () => clustersApi.list(orgId!),
+    enabled: !!orgId,
     refetchInterval: 30000,
   });
   const [demoClusters, setDemoClusters] = useState<DemoCluster[]>([]);
