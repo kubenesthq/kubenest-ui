@@ -466,6 +466,34 @@ export default function WorkloadDetailPage() {
         </motion.div>
       )}
 
+      {/* Environment Variables */}
+      {workload.env_config && workload.env_config.length > 0 && (
+        <motion.div
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          transition={{ duration: 0.4, delay: 0.26, ease: easeOutQuart }}
+        >
+          <Card className="border-zinc-200">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold text-zinc-900">
+                Environment Variables
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="bg-zinc-50 border border-zinc-100 rounded-md p-3 space-y-1">
+                {workload.env_config.map((env) => (
+                  <div key={env.name} className="text-xs font-mono text-zinc-600">
+                    <span className="text-zinc-400">{env.name}=</span>
+                    {env.value ?? (env.valueFrom ? '<from-secret>' : '')}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
       {/* Helm Values */}
       {workload.chart_config?.values && Object.keys(workload.chart_config.values).length > 0 && (
         <motion.div
@@ -531,7 +559,7 @@ export default function WorkloadDetailPage() {
                   </div>
                 </div>
               )}
-              {workload.phase === 'running' && (
+              {workload.phase === 'Running' && (
                 <div className="flex items-start gap-3 text-sm">
                   <div className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
                   <div>
@@ -542,7 +570,7 @@ export default function WorkloadDetailPage() {
                   </div>
                 </div>
               )}
-              {workload.phase === 'failed' && (
+              {workload.phase === 'Failed' && (
                 <div className="flex items-start gap-3 text-sm">
                   <div className="w-2 h-2 rounded-full bg-red-500 mt-1.5 shrink-0" />
                   <div>

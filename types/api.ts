@@ -137,8 +137,8 @@ export interface IngressConfig {
   annotations: Record<string, string> | null;
 }
 
-// Workload types
-export type WorkloadPhase = 'pending' | 'building' | 'deploying' | 'running' | 'degraded' | 'failed';
+// Workload types (Title-case to match backend WorkloadPhase enum)
+export type WorkloadPhase = 'Pending' | 'Building' | 'Deploying' | 'Running' | 'Degraded' | 'Failed';
 export type WorkloadType = 'deployment' | 'statefulset';
 
 export interface ChartSpec {
@@ -160,6 +160,7 @@ export interface Workload {
   phase: WorkloadPhase;
   ingress_config: IngressConfig | null;
   build_config: Record<string, unknown> | null;
+  env_config: Array<{ name: string; value?: string; valueFrom?: Record<string, unknown> }> | null;
   exports: Record<string, unknown> | null;
   url: string | null;
   deployed_at: string | null;
