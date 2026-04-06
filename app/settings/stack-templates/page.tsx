@@ -130,10 +130,16 @@ export default function StacksPage() {
           <h1 className="text-lg font-semibold text-zinc-900">Stack Templates</h1>
           <p className="text-sm text-zinc-500 mt-0.5">Deploy pre-configured application stacks in one click.</p>
         </div>
-        <Button size="sm" onClick={() => setShowCreateDialog(true)}>
-          <Plus className="h-3.5 w-3.5 mr-1.5" />
-          Create from Project
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShowCreateDialog(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            From Project
+          </Button>
+          <Button size="sm" onClick={() => router.push('/settings/stack-templates/new')}>
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            From Scratch
+          </Button>
+        </div>
       </div>
 
       <div className="relative">
