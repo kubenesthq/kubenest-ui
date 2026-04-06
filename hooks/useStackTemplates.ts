@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { stackTemplatesApi, type StackTemplateCreate, type StackTemplateDeploy } from '@/lib/api/stack-templates';
+import { stackTemplatesApi, type StackTemplateCreate, type StackTemplateFromProject, type StackTemplateDeploy } from '@/lib/api/stack-templates';
 
 export function useStackTemplates(params?: { namespace?: string; scope?: string }) {
   return useQuery({
@@ -27,6 +27,17 @@ export function useCreateStackTemplate() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: StackTemplateCreate) => stackTemplatesApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['stack-templates'] });
+    },
+  });
+}
+
+export function useCreateStackTemplateFromProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, data }: { projectId: string; data: StackTemplateFromProject }) =>
+      stackTemplatesApi.createFromProject(projectId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stack-templates'] });
     },

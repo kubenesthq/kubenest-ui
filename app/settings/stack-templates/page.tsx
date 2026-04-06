@@ -2,11 +2,21 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Layers, Database, Globe, Search, Trash2, Download, Loader2 } from 'lucide-react';
+import { Layers, Database, Globe, Search, Trash2, Download, Loader2, Plus } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -16,8 +26,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useAuth } from '@/hooks/useAuth';
-import { useStackTemplates, useDeleteStackTemplate, useRegistryTemplates, useInstallRegistryTemplate } from '@/hooks/useStackTemplates';
+import { useStackTemplates, useDeleteStackTemplate, useRegistryTemplates, useInstallRegistryTemplate, useCreateStackTemplateFromProject } from '@/hooks/useStackTemplates';
+import { apiClient } from '@/lib/api-client';
 import type { StackTemplateRead } from '@/lib/api/stack-templates';
+import type { ProjectListResponse } from '@/types/api';
 
 export default function StacksPage() {
   const { isAuthenticated } = useAuth(true);
@@ -26,11 +38,47 @@ export default function StacksPage() {
   const [deleteTarget, setDeleteTarget] = useState<StackTemplateRead | null>(null);
   const [installNamespace, setInstallNamespace] = useState('');
   const [installTarget, setInstallTarget] = useState<string | null>(null);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [createName, setCreateName] = useState('');
+  const [createDescription, setCreateDescription] = useState('');
+  const [createProjectId, setCreateProjectId] = useState('');
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const { data: templateList, isLoading } = useStackTemplates();
   const { data: registryList, isLoading: registryLoading } = useRegistryTemplates();
   const deleteMutation = useDeleteStackTemplate();
   const installMutation = useInstallRegistryTemplate();
+  const createFromProjectMutation = useCreateStackTemplateFromProject();
+
+  const { data: projectsData } = useQuery({
+    queryKey: ['projects-all'],
+    queryFn: () => apiClient.get<ProjectListResponse>('/projects'),
+    enabled: showCreateDialog,
+  });
+  const projects = projectsData?.data ?? [];
+
+  const handleCreate = () => {
+    if (!createProjectId || !createName.trim()) return;
+    setCreateError(null);
+    createFromProjectMutation.mutate(
+      {
+        projectId: createProjectId,
+        data: {
+          name: createName.trim(),
+          description: createDescription.trim() || undefined,
+        },
+      },
+      {
+        onSuccess: () => {
+          setShowCreateDialog(false);
+          setCreateName('');
+          setCreateDescription('');
+          setCreateProjectId('');
+        },
+        onError: (err) => setCreateError(err instanceof Error ? err.message : 'Failed to create template'),
+      }
+    );
+  };
 
   const templates = templateList?.data ?? [];
   const registryTemplates = registryList?.data ?? [];
@@ -82,6 +130,10 @@ export default function StacksPage() {
           <h1 className="text-lg font-semibold text-zinc-900">Stack Templates</h1>
           <p className="text-sm text-zinc-500 mt-0.5">Deploy pre-configured application stacks in one click.</p>
         </div>
+        <Button size="sm" onClick={() => setShowCreateDialog(true)}>
+          <Plus className="h-3.5 w-3.5 mr-1.5" />
+          Create from Project
+        </Button>
       </div>
 
       <div className="relative">
@@ -224,6 +276,65 @@ export default function StacksPage() {
             </Button>
             <Button variant="destructive" onClick={confirmDelete} disabled={deleteMutation.isPending}>
               {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create from Project Dialog */}
+      <Dialog open={showCreateDialog} onOpenChange={(open) => { setShowCreateDialog(open); if (!open) { setCreateName(''); setCreateDescription(''); setCreateProjectId(''); setCreateError(null); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Template from Project</DialogTitle>
+            <DialogDescription>
+              Snapshot a project's current workloads and addons into a reusable stack template.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="create-project">Source Project</Label>
+              <Select value={createProjectId} onValueChange={setCreateProjectId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a project..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name} ({p.namespace})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="create-name">Template Name</Label>
+              <Input
+                id="create-name"
+                placeholder="my-stack-template"
+                value={createName}
+                onChange={(e) => setCreateName(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="create-desc">Description</Label>
+              <Textarea
+                id="create-desc"
+                placeholder="What does this stack do?"
+                value={createDescription}
+                onChange={(e) => setCreateDescription(e.target.value)}
+                rows={2}
+              />
+            </div>
+            {createError && (
+              <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{createError}</div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreateDialog(false)} disabled={createFromProjectMutation.isPending}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreate} disabled={createFromProjectMutation.isPending || !createProjectId || !createName.trim()}>
+              {createFromProjectMutation.isPending ? 'Creating...' : 'Create Template'}
             </Button>
           </DialogFooter>
         </DialogContent>

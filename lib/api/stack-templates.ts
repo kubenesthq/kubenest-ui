@@ -76,6 +76,15 @@ export interface StackTemplateCreate {
   parameters?: Record<string, unknown>;
 }
 
+export interface StackTemplateFromProject {
+  name: string;
+  description?: string;
+  version?: string;
+  scope?: 'global' | 'cluster' | 'project';
+  icon?: string;
+  tags?: string[];
+}
+
 // -- API client --
 
 export const stackTemplatesApi = {
@@ -92,6 +101,9 @@ export const stackTemplatesApi = {
 
   create: (data: StackTemplateCreate) =>
     apiClient.post<StackTemplateRead>('/stack-templates', data),
+
+  createFromProject: (projectId: string, data: StackTemplateFromProject) =>
+    apiClient.post<StackTemplateRead>(`/stack-templates/from-project/${projectId}`, data),
 
   delete: (namespace: string, name: string) =>
     apiClient.delete<void>(`/stack-templates/${namespace}/${name}`),
