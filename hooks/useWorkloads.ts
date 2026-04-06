@@ -1,8 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { workloadsApi } from '@/lib/api/workloads';
-import type { CreateWorkloadRequest } from '@/types/api';
+import { workloadsApi, projectExportsApi } from '@/lib/api/workloads';
+import type { CreateWorkloadRequest, WorkloadUpdateRequest } from '@/types/api';
 
-// Hook to get a single workload
 export function useWorkload(id: string) {
   return useQuery({
     queryKey: ['workload', id],
@@ -11,7 +10,6 @@ export function useWorkload(id: string) {
   });
 }
 
-// Hook to get all workloads for a project
 export function useWorkloads(projectId: string) {
   return useQuery({
     queryKey: ['workloads', projectId],
@@ -20,10 +18,8 @@ export function useWorkloads(projectId: string) {
   });
 }
 
-// Hook to create a workload
 export function useCreateWorkload(projectId: string) {
   const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: (data: Omit<CreateWorkloadRequest, 'project_id'>) =>
       workloadsApi.create({ ...data, project_id: projectId }),
@@ -33,10 +29,19 @@ export function useCreateWorkload(projectId: string) {
   });
 }
 
-// Hook to scale a workload
+export function useUpdateWorkload(workloadId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: WorkloadUpdateRequest) =>
+      workloadsApi.update(workloadId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workload', workloadId] });
+    },
+  });
+}
+
 export function useScaleWorkload(workloadId: string) {
   const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: (replicas: number) =>
       workloadsApi.scale(workloadId, { replicas }),
@@ -46,14 +51,20 @@ export function useScaleWorkload(workloadId: string) {
   });
 }
 
-// Hook to delete a workload
 export function useDeleteWorkload() {
   const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: (workloadId: string) => workloadsApi.delete(workloadId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workloads'] });
     },
+  });
+}
+
+export function useAvailableExports(projectId: string) {
+  return useQuery({
+    queryKey: ['available-exports', projectId],
+    queryFn: () => projectExportsApi.getAvailableExports(projectId),
+    enabled: !!projectId,
   });
 }

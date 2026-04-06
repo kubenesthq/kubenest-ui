@@ -12,6 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { WorkloadStatusBadge } from '@/components/workloads/WorkloadStatusBadge';
 import { PhaseIndicator } from '@/components/workloads/PhaseIndicator';
+import { WorkloadSecretsCard } from '@/components/workloads/WorkloadSecretsCard';
+import { WorkloadEditDialog } from '@/components/workloads/WorkloadEditDialog';
 import {
   Dialog,
   DialogContent,
@@ -37,6 +39,7 @@ export default function WorkloadDetailPage() {
   const params = useParams();
   const workloadId = params.id as string;
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
   const [desiredReplicas, setDesiredReplicas] = useState<number>(1);
   const [isScaling, setIsScaling] = useState(false);
   const [showHelmValues, setShowHelmValues] = useState(false);
@@ -191,13 +194,22 @@ export default function WorkloadDetailPage() {
             )}
           </p>
         </div>
-        <Button
-          variant="destructive"
-          size="sm"
-          onClick={() => setShowDeleteDialog(true)}
-        >
-          Delete
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowEditDialog(true)}
+          >
+            Edit
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => setShowDeleteDialog(true)}
+          >
+            Delete
+          </Button>
+        </div>
       </motion.div>
 
       {/* Deployment Progress */}
@@ -494,6 +506,16 @@ export default function WorkloadDetailPage() {
         </motion.div>
       )}
 
+      {/* Secrets */}
+      <motion.div
+        variants={fadeInUp}
+        initial="initial"
+        animate="animate"
+        transition={{ duration: 0.4, delay: 0.28, ease: easeOutQuart }}
+      >
+        <WorkloadSecretsCard workloadId={workloadId} />
+      </motion.div>
+
       {/* Helm Values */}
       {workload.chart_config?.values && Object.keys(workload.chart_config.values).length > 0 && (
         <motion.div
@@ -585,6 +607,15 @@ export default function WorkloadDetailPage() {
           </CardContent>
         </Card>
       </motion.div>
+
+      {/* Edit Dialog */}
+      {workload && (
+        <WorkloadEditDialog
+          workload={workload}
+          open={showEditDialog}
+          onOpenChange={setShowEditDialog}
+        />
+      )}
 
       {/* Delete Dialog */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

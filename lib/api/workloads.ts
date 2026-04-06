@@ -2,35 +2,47 @@ import { apiClient } from '../api-client';
 import type {
   Workload,
   CreateWorkloadRequest,
+  WorkloadUpdateRequest,
   WorkloadListResponse,
   ScaleRequest,
 } from '@/types/api';
 
+export interface AvailableExport {
+  addon_instance_id: string;
+  addon_name: string;
+  addon_type: string;
+  export_key: string;
+  display: string;
+  env_var_suggestion: string;
+}
+
 export const workloadsApi = {
-  // List all workloads for a project
   list: (projectId: string) =>
     apiClient.get<WorkloadListResponse>(`/workloads?project_id=${projectId}`),
 
-  // Get single workload
   get: (workloadId: string) =>
     apiClient.get<Workload>(`/workloads/${workloadId}`),
 
-  // Create workload (POST /workloads with project_id in body)
   create: (data: CreateWorkloadRequest) =>
     apiClient.post<Workload>('/workloads', data),
 
-  // Scale workload (POST, not PATCH)
+  update: (workloadId: string, data: WorkloadUpdateRequest) =>
+    apiClient.patch<Workload>(`/workloads/${workloadId}`, data),
+
   scale: (workloadId: string, data: ScaleRequest) =>
     apiClient.post<Workload>(`/workloads/${workloadId}/scale`, data),
 
-  // Delete workload
   delete: (workloadId: string) =>
     apiClient.delete<void>(`/workloads/${workloadId}`),
 
-  // Redeploy workload
   redeploy: (workloadId: string) =>
     apiClient.post<{ message: string; workload_id: string; phase: string }>(
       `/workloads/${workloadId}/redeploy`,
       {}
     ),
+};
+
+export const projectExportsApi = {
+  getAvailableExports: (projectId: string) =>
+    apiClient.get<AvailableExport[]>(`/projects/${projectId}/available-exports`),
 };

@@ -184,6 +184,15 @@ export interface CreateWorkloadRequest {
   env?: Array<{ name: string; value: string }>;
 }
 
+export interface EnvVarInput {
+  name: string;
+  value?: string;
+  export_ref?: {
+    addon_instance_id: string;
+    export_key: string;
+  };
+}
+
 export interface WorkloadUpdateRequest {
   name?: string;
   image?: string;
@@ -192,6 +201,7 @@ export interface WorkloadUpdateRequest {
   port?: number;
   build_config?: Record<string, unknown>;
   ingress?: IngressConfig;
+  env?: EnvVarInput[];
 }
 
 export interface ScaleRequest {

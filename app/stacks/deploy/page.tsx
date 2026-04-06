@@ -1,88 +1,25 @@
 'use client';
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Loader2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { useAuth } from '@/hooks/useAuth';
 import {
-  getDemoStackTemplate,
-  deployDemoStack,
-  type DemoStackTemplate,
-} from '@/lib/demo-store';
-
-
-const builtinTemplateData: Record<string, { name: string; components: string[]; image: string; addons: string[]; variables: { key: string; label: string; default: string; description: string }[] }> = {
-  'node-postgres': {
-    name: 'Node.js + PostgreSQL',
-    components: ['Node.js App', 'PostgreSQL'],
-    image: 'node:20',
-    addons: ['PostgreSQL'],
-    variables: [
-      { key: 'app_name', label: 'Application Name', default: 'my-app', description: 'Used for service names and database' },
-      { key: 'node_version', label: 'Node.js Version', default: '20', description: 'Node.js major version' },
-      { key: 'db_name', label: 'Database Name', default: 'myapp', description: 'PostgreSQL database name' },
-      { key: 'db_storage', label: 'Database Storage', default: '5Gi', description: 'Persistent volume size' },
-    ],
-  },
-  'rails-redis-postgres': {
-    name: 'Rails + Redis + PostgreSQL',
-    components: ['Rails App', 'PostgreSQL', 'Redis'],
-    image: 'ruby:3.3',
-    addons: ['PostgreSQL', 'Redis'],
-    variables: [
-      { key: 'app_name', label: 'Application Name', default: 'my-rails-app', description: 'Used for service names' },
-      { key: 'ruby_version', label: 'Ruby Version', default: '3.3', description: 'Ruby version' },
-      { key: 'db_name', label: 'Database Name', default: 'rails_production', description: 'PostgreSQL database name' },
-      { key: 'redis_memory', label: 'Redis Memory', default: '128Mi', description: 'Memory for Redis cache' },
-      { key: 'worker_replicas', label: 'Sidekiq Workers', default: '2', description: 'Number of background job workers' },
-    ],
-  },
-  'nextjs-postgres': {
-    name: 'Next.js + PostgreSQL',
-    components: ['Next.js App', 'PostgreSQL'],
-    image: 'node:20',
-    addons: ['PostgreSQL'],
-    variables: [
-      { key: 'app_name', label: 'Application Name', default: 'my-nextjs-app', description: 'Application name' },
-      { key: 'db_name', label: 'Database Name', default: 'nextjs_db', description: 'PostgreSQL database name' },
-    ],
-  },
-  'django-postgres': {
-    name: 'Django + PostgreSQL',
-    components: ['Django App', 'PostgreSQL', 'Redis', 'Celery Worker'],
-    image: 'python:3.12',
-    addons: ['PostgreSQL', 'Redis'],
-    variables: [
-      { key: 'app_name', label: 'Application Name', default: 'my-django-app', description: 'Application name' },
-      { key: 'db_name', label: 'Database Name', default: 'django_db', description: 'PostgreSQL database name' },
-    ],
-  },
-  'fastapi-postgres': {
-    name: 'FastAPI + PostgreSQL',
-    components: ['FastAPI App', 'PostgreSQL'],
-    image: 'python:3.12',
-    addons: ['PostgreSQL'],
-    variables: [
-      { key: 'app_name', label: 'Application Name', default: 'my-fastapi-app', description: 'Application name' },
-      { key: 'db_name', label: 'Database Name', default: 'fastapi_db', description: 'PostgreSQL database name' },
-    ],
-  },
-  'kafka-stream': {
-    name: 'Event Streaming Pipeline',
-    components: ['Kafka', 'Producer Service', 'Consumer Service'],
-    image: 'bitnami/kafka:3.7',
-    addons: ['Kafka'],
-    variables: [
-      { key: 'app_name', label: 'Pipeline Name', default: 'my-pipeline', description: 'Pipeline name' },
-      { key: 'partitions', label: 'Partitions', default: '3', description: 'Number of Kafka partitions' },
-    ],
-  },
-};
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useAuth } from '@/hooks/useAuth';
+import { useStackTemplate, useDeployStackTemplate } from '@/hooks/useStackTemplates';
+import { apiClient } from '@/lib/api-client';
+import { useQuery } from '@tanstack/react-query';
+import type { ProjectListResponse } from '@/types/api';
 
 export default function StackDeployPage() {
   return (
@@ -96,61 +33,84 @@ function StackDeployForm() {
   const { isAuthenticated } = useAuth(true);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const templateId = searchParams.get('template') || '';
+  const ns = searchParams.get('ns') || '';
+  const name = searchParams.get('name') || '';
 
-  const [userTemplate, setUserTemplate] = useState<DemoStackTemplate | null>(null);
+  const { data: template, isLoading: templateLoading } = useStackTemplate(ns, name);
 
-  useEffect(() => {
-    // Check if it's a user-created template (UUID format)
-    if (templateId && !builtinTemplateData[templateId]) {
-      setUserTemplate(getDemoStackTemplate(templateId));
-    }
-  }, [templateId]);
-
-  // Resolve template data
-  const builtinTpl = builtinTemplateData[templateId];
-  const resolvedName = userTemplate?.name ?? builtinTpl?.name ?? 'Custom Stack';
-  const resolvedComponents = userTemplate
-    ? [userTemplate.workload_config.name, ...userTemplate.addons.map(a => a.addon_name)]
-    : builtinTpl?.components ?? ['App'];
-  const resolvedVariables = userTemplate
-    ? userTemplate.variables.map(v => ({ key: v.key, label: v.label, default: v.default_value, description: v.description }))
-    : builtinTpl?.variables ?? [
-        { key: 'app_name', label: 'Application Name', default: 'my-app', description: 'Application name' },
-        { key: 'replicas', label: 'Replicas', default: '1', description: 'Number of replicas' },
-      ];
-
-  const [values, setValues] = useState<Record<string, string>>(
-    Object.fromEntries(resolvedVariables.map((v) => [v.key, v.default]))
-  );
-  const [deploying, setDeploying] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState('');
+  const [paramValues, setParamValues] = useState<Record<string, string>>({});
   const [deployed, setDeployed] = useState(false);
+  const [deployResult, setDeployResult] = useState<{ deploy_name: string; namespace: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const deployMutation = useDeployStackTemplate(ns, name);
+
+  // Fetch projects for the project selector
+  const { data: projectsData } = useQuery({
+    queryKey: ['projects-all'],
+    queryFn: () => apiClient.get<ProjectListResponse>('/projects'),
+  });
+  const projects = projectsData?.data ?? [];
+
+  // Initialize parameter defaults when template loads
+  const parameters = template?.parameters ?? {};
+  const paramEntries = Object.entries(parameters);
 
   const handleDeploy = () => {
-    setDeploying(true);
+    if (!selectedProjectId) return;
+    setError(null);
 
-    // Save to localStorage as a deployed stack
-    const stackName = values.app_name || resolvedName;
-    deployDemoStack({
-      name: stackName,
-      template_id: userTemplate?.id ?? templateId ?? null,
-      template_name: resolvedName,
-      project_id: 'demo', // placeholder project
-      workload_name: userTemplate?.workload_config.name ?? values.app_name ?? 'app',
-      image: userTemplate?.workload_config.image ?? builtinTpl?.image ?? null,
-      addons: userTemplate
-        ? userTemplate.addons.map(a => a.addon_name)
-        : builtinTpl?.addons ?? [],
-      variables: values,
-    });
+    // Build parameter values, using defaults for unfilled
+    const resolvedParams: Record<string, unknown> = {};
+    for (const [key, spec] of paramEntries) {
+      const userVal = paramValues[key];
+      if (userVal !== undefined && userVal !== '') {
+        resolvedParams[key] = spec.type === 'integer' ? parseInt(userVal) : spec.type === 'boolean' ? userVal === 'true' : userVal;
+      }
+    }
 
-    setTimeout(() => {
-      setDeploying(false);
-      setDeployed(true);
-    }, 1500);
+    deployMutation.mutate(
+      {
+        project_id: selectedProjectId,
+        parameters: Object.keys(resolvedParams).length > 0 ? resolvedParams : undefined,
+      },
+      {
+        onSuccess: (result) => {
+          setDeployed(true);
+          setDeployResult(result);
+        },
+        onError: (err) => {
+          setError(err instanceof Error ? err.message : 'Deployment failed');
+        },
+      }
+    );
   };
 
   if (!isAuthenticated) return null;
+
+  if (templateLoading) {
+    return (
+      <div className="flex items-center justify-center py-32">
+        <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+      </div>
+    );
+  }
+
+  if (!template) {
+    return (
+      <div className="px-8 py-8 max-w-2xl">
+        <button onClick={() => router.back()} className="flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-700 mb-4">
+          <ArrowLeft className="h-4 w-4" /> Back
+        </button>
+        <Card className="border-zinc-200">
+          <CardContent className="pt-6 text-center text-sm text-zinc-400">
+            Template not found. Make sure the namespace and name are correct.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="px-8 py-8 max-w-2xl space-y-6">
@@ -159,10 +119,15 @@ function StackDeployForm() {
       </button>
 
       <div>
-        <h1 className="text-lg font-semibold text-zinc-900">Deploy: {resolvedName}</h1>
+        <h1 className="text-lg font-semibold text-zinc-900">Deploy: {template.name}</h1>
+        {template.description && (
+          <p className="text-sm text-zinc-500 mt-1">{template.description}</p>
+        )}
         <div className="flex gap-1.5 mt-2">
-          {resolvedComponents.map((c) => (
-            <Badge key={c} variant="secondary" className="text-xs bg-zinc-100 text-zinc-600">{c}</Badge>
+          {template.components.map((c) => (
+            <Badge key={c.name} variant="secondary" className="text-xs bg-zinc-100 text-zinc-600">
+              {c.name} ({c.type})
+            </Badge>
           ))}
         </div>
       </div>
@@ -173,11 +138,11 @@ function StackDeployForm() {
             <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto" />
             <h2 className="text-lg font-medium text-emerald-800">Stack Deployed!</h2>
             <p className="text-sm text-emerald-600">
-              {values.app_name || 'Your stack'} is being provisioned.
+              {deployResult?.deploy_name} is being provisioned in namespace {deployResult?.namespace}.
             </p>
             <div className="flex gap-2 justify-center pt-2">
-              <Button variant="outline" size="sm" onClick={() => router.push('/apps')}>
-                View Apps
+              <Button variant="outline" size="sm" onClick={() => router.push(`/projects/${selectedProjectId}`)}>
+                View Project
               </Button>
               <Button size="sm" onClick={() => router.push('/settings/stack-templates')}>
                 Deploy Another
@@ -188,23 +153,82 @@ function StackDeployForm() {
       ) : (
         <Card className="border-zinc-200">
           <CardContent className="pt-6 space-y-4">
-            <p className="text-sm text-zinc-500 mb-4">Configure your stack parameters:</p>
+            {/* Project selector */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-zinc-600">Target Project</Label>
+              <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a project..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name} ({p.namespace})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-            {resolvedVariables.map((v) => (
-              <div key={v.key} className="space-y-1.5">
-                <Label htmlFor={v.key} className="text-xs font-medium text-zinc-600">{v.label}</Label>
-                <Input
-                  id={v.key}
-                  value={values[v.key] || ''}
-                  onChange={(e) => setValues({ ...values, [v.key]: e.target.value })}
-                  className="border-zinc-200"
-                />
-                <p className="text-xs text-zinc-400">{v.description}</p>
-              </div>
-            ))}
+            {/* Template parameters */}
+            {paramEntries.length > 0 && (
+              <>
+                <p className="text-sm text-zinc-500">Configure template parameters:</p>
+                {paramEntries.map(([key, spec]) => (
+                  <div key={key} className="space-y-1.5">
+                    <Label htmlFor={key} className="text-xs font-medium text-zinc-600">
+                      {key}
+                      {spec.required && <span className="text-red-500 ml-0.5">*</span>}
+                    </Label>
+                    {spec.type === 'boolean' ? (
+                      <Select
+                        value={paramValues[key] ?? String(spec.default ?? 'false')}
+                        onValueChange={(v) => setParamValues({ ...paramValues, [key]: v })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="true">true</SelectItem>
+                          <SelectItem value="false">false</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        id={key}
+                        type={spec.type === 'integer' ? 'number' : 'text'}
+                        placeholder={spec.default !== undefined ? String(spec.default) : ''}
+                        value={paramValues[key] ?? ''}
+                        onChange={(e) => setParamValues({ ...paramValues, [key]: e.target.value })}
+                        className="border-zinc-200"
+                      />
+                    )}
+                    {spec.description && <p className="text-xs text-zinc-400">{spec.description}</p>}
+                    {spec.generator && (
+                      <p className="text-xs text-blue-500">Auto-generated ({spec.generator})</p>
+                    )}
+                  </div>
+                ))}
+              </>
+            )}
 
-            <Button className="w-full mt-4" onClick={handleDeploy} disabled={deploying}>
-              {deploying ? 'Deploying...' : 'Deploy Stack'}
+            {error && (
+              <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{error}</div>
+            )}
+
+            <Button
+              className="w-full mt-4"
+              onClick={handleDeploy}
+              disabled={deployMutation.isPending || !selectedProjectId}
+            >
+              {deployMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deploying...
+                </>
+              ) : (
+                'Deploy Stack'
+              )}
             </Button>
           </CardContent>
         </Card>
