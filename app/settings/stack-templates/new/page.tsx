@@ -73,7 +73,6 @@ export default function NewStackTemplatePage() {
   const createMutation = useCreateStackTemplate();
 
   const [name, setName] = useState('');
-  const [namespace, setNamespace] = useState('');
   const [description, setDescription] = useState('');
   const [components, setComponents] = useState<ComponentDraft[]>([emptyComponent('workload')]);
   const [parameters, setParameters] = useState<ParameterDraft[]>([]);
@@ -106,7 +105,7 @@ export default function NewStackTemplatePage() {
   };
 
   const handleSubmit = () => {
-    if (!name.trim() || !namespace.trim()) return;
+    if (!name.trim()) return;
     if (components.some((c) => !c.name.trim())) return;
 
     setError(null);
@@ -128,7 +127,6 @@ export default function NewStackTemplatePage() {
 
     const payload: StackTemplateCreate = {
       name: name.trim(),
-      namespace: namespace.trim(),
       description: description.trim() || undefined,
       components: components.map((c) => {
         const hasChart = c.chart_repo && c.chart_name && c.chart_version;
@@ -199,25 +197,14 @@ export default function NewStackTemplatePage() {
       {/* Template metadata */}
       <Card className="border-zinc-200">
         <CardContent className="pt-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="tpl-name">Template Name</Label>
-              <Input
-                id="tpl-name"
-                placeholder="my-fullstack-app"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="tpl-ns">Namespace</Label>
-              <Input
-                id="tpl-ns"
-                placeholder="default"
-                value={namespace}
-                onChange={(e) => setNamespace(e.target.value)}
-              />
-            </div>
+          <div>
+            <Label htmlFor="tpl-name">Template Name</Label>
+            <Input
+              id="tpl-name"
+              placeholder="my-fullstack-app"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
           </div>
           <div>
             <Label htmlFor="tpl-desc">Description</Label>
@@ -527,7 +514,7 @@ export default function NewStackTemplatePage() {
         <Button variant="outline" onClick={() => router.back()}>Cancel</Button>
         <Button
           onClick={handleSubmit}
-          disabled={createMutation.isPending || !name.trim() || !namespace.trim() || components.some((c) => !c.name.trim())}
+          disabled={createMutation.isPending || !name.trim() || components.some((c) => !c.name.trim())}
         >
           {createMutation.isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
           Create Template

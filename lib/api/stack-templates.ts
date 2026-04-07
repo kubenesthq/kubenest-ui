@@ -60,7 +60,6 @@ export interface StackTemplateDeploy {
 
 export interface StackTemplateCreate {
   name: string;
-  namespace: string;
   description?: string;
   version?: string;
   scope?: 'global' | 'cluster' | 'project';
