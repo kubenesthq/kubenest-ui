@@ -162,7 +162,11 @@ export default function StacksPage() {
           <h2 className="text-sm font-medium text-zinc-500 uppercase tracking-wide">Your Templates</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredTemplates.map((template) => (
-              <Card key={`${template.namespace}/${template.name}`} className="border-zinc-200 hover:border-zinc-300 hover:shadow-sm transition-all cursor-pointer group">
+              <Card
+                key={`${template.namespace}/${template.name}`}
+                className="border-zinc-200 hover:border-zinc-300 hover:shadow-sm transition-all cursor-pointer group"
+                onClick={() => router.push(`/settings/stack-templates/${template.namespace}/${template.name}`)}
+              >
                 <CardContent className="pt-5 pb-4">
                   <div className="flex items-start gap-3 mb-3">
                     <div className="h-9 w-9 rounded-lg bg-violet-500 flex items-center justify-center shrink-0">
@@ -194,7 +198,7 @@ export default function StacksPage() {
                     <Button
                       size="sm"
                       className="flex-1"
-                      onClick={() => router.push(`/stacks/deploy?ns=${template.namespace}&name=${template.name}`)}
+                      onClick={(e) => { e.stopPropagation(); router.push(`/stacks/deploy?ns=${template.namespace}&name=${template.name}`); }}
                     >
                       Deploy Stack
                     </Button>
