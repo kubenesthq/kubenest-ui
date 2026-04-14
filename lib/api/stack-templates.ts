@@ -58,6 +58,29 @@ export interface StackTemplateDeploy {
   timeout?: string;
 }
 
+export interface StackDeployComponent {
+  name: string;
+  type: string;
+}
+
+export interface StackDeployRead {
+  name: string;
+  namespace: string;
+  template_name: string;
+  template_version: string;
+  phase: string;
+  message: string | null;
+  component_count: number;
+  components: StackDeployComponent[];
+  project_id: string | null;
+  created_at: string | null;
+}
+
+export interface StackDeployList {
+  data: StackDeployRead[];
+  total_count: number;
+}
+
 export interface StackTemplateCreate {
   name: string;
   description?: string;
@@ -125,4 +148,7 @@ export const stackTemplatesApi = {
       `/stack-templates/registry/${name}/install?namespace=${encodeURIComponent(namespace)}`,
       {}
     ),
+
+  listDeploys: (orgId: string) =>
+    apiClient.get<StackDeployList>(`/stack-deploys?org_id=${orgId}`),
 };
