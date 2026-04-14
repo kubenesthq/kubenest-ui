@@ -20,6 +20,11 @@ export const workloadsApi = {
   list: (projectId: string) =>
     apiClient.get<WorkloadListResponse>(`/workloads?project_id=${projectId}`),
 
+  listByOrg: (orgId: string, itemsPerPage = 100) =>
+    apiClient.get<WorkloadListResponse>(
+      `/workloads?org_id=${orgId}&items_per_page=${itemsPerPage}`
+    ),
+
   get: (workloadId: string) =>
     apiClient.get<Workload>(`/workloads/${workloadId}`),
 

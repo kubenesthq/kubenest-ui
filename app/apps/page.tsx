@@ -1,19 +1,16 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { Layers, Database, Container, Trash2, Plus, GitBranch } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useQuery, useQueries } from '@tanstack/react-query';
+import { Layers, Container, GitBranch } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAuth } from '@/hooks/useAuth';
-import {
-  getAllDemoWorkloads, deleteDemoWorkload,
-  getDemoDeployedStacks, deleteDemoDeployedStack,
-  getDemoProjects,
-  type DemoWorkload, type DemoDeployedStack,
-} from '@/lib/demo-store';
+import { useCurrentOrg } from '@/hooks/useOrganization';
+import { workloadsApi } from '@/lib/api/workloads';
+import { clustersApi } from '@/lib/api/clusters';
 
 const statusColors: Record<string, string> = {
   running: 'bg-emerald-100 text-emerald-700',
@@ -36,44 +33,51 @@ const statusDots: Record<string, string> = {
 export default function AppsPage() {
   const { isAuthenticated } = useAuth(true);
   const router = useRouter();
-  const [workloads, setWorkloads] = useState<DemoWorkload[]>([]);
-  const [stacks, setStacks] = useState<DemoDeployedStack[]>([]);
-  const [projectNames, setProjectNames] = useState<Record<string, string>>({});
+  const { orgId } = useCurrentOrg();
 
-  const reload = () => {
-    setWorkloads(getAllDemoWorkloads());
-    setStacks(getDemoDeployedStacks());
-    // Build project name map
-    const projects = getDemoProjects();
-    const names: Record<string, string> = {};
-    projects.forEach(p => { names[p.id] = p.name; });
-    setProjectNames(names);
-  };
+  const workloadsQuery = useQuery({
+    queryKey: ['workloads', 'org', orgId],
+    queryFn: () => workloadsApi.listByOrg(orgId!),
+    enabled: !!orgId,
+    refetchInterval: 15000,
+  });
 
-  useEffect(() => { reload(); }, []);
+  const clustersQuery = useQuery({
+    queryKey: ['clusters', orgId],
+    queryFn: () => clustersApi.list(orgId!),
+    enabled: !!orgId,
+  });
 
-  const handleDeleteWorkload = (id: string) => {
-    deleteDemoWorkload(id);
-    reload();
-  };
+  const clusterIds = clustersQuery.data?.data.map((c) => c.id) ?? [];
+  const projectQueries = useQueries({
+    queries: clusterIds.map((id) => ({
+      queryKey: ['clusters', id, 'projects'],
+      queryFn: () => clustersApi.getProjects(id),
+    })),
+  });
 
-  const handleDeleteStack = (id: string) => {
-    deleteDemoDeployedStack(id);
-    reload();
-  };
+  const projectNames = useMemo(() => {
+    const map: Record<string, string> = {};
+    projectQueries.forEach((q) => {
+      q.data?.data.forEach((p) => {
+        map[p.id] = p.name;
+      });
+    });
+    return map;
+  }, [projectQueries]);
 
   if (!isAuthenticated) return null;
 
+  const workloads = workloadsQuery.data?.data ?? [];
+  const isLoading = workloadsQuery.isLoading;
   const hasWorkloads = workloads.length > 0;
-  const hasStacks = stacks.length > 0;
-  const hasAnything = hasWorkloads || hasStacks;
 
   return (
     <div className="px-8 py-8 space-y-6 max-w-5xl">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold text-zinc-900">Apps</h1>
-          <p className="text-sm text-zinc-500 mt-0.5">All deployed workloads and stacks across your projects.</p>
+          <p className="text-sm text-zinc-500 mt-0.5">All deployed workloads across your projects.</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => router.push('/settings/stack-templates')}>
@@ -82,7 +86,11 @@ export default function AppsPage() {
         </div>
       </div>
 
-      {!hasAnything ? (
+      {isLoading ? (
+        <Card className="border-zinc-200">
+          <CardContent className="py-12 text-center text-sm text-zinc-500">Loading workloads…</CardContent>
+        </Card>
+      ) : !hasWorkloads ? (
         <Card className="border-zinc-200">
           <CardContent className="py-12">
             <div className="text-center space-y-3">
@@ -102,167 +110,64 @@ export default function AppsPage() {
           </CardContent>
         </Card>
       ) : (
-        <>
-          {/* Workloads */}
-          {hasWorkloads && (
-            <Card className="border-zinc-200">
-              <CardHeader className="pb-0">
-                <CardTitle className="text-base">Workloads</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Source</TableHead>
-                      <TableHead>Project</TableHead>
-                      <TableHead>Addons</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {workloads.map((w) => (
-                      <TableRow
-                        key={w.id}
-                        className="cursor-pointer"
-                        onClick={() => router.push(`/demo-workloads/${w.id}`)}
-                      >
-                        <TableCell>
-                          <p className="font-medium text-zinc-900">{w.name}</p>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1.5">
-                            {w.source_type === 'image' ? (
-                              <Container className="h-3.5 w-3.5 text-zinc-400" />
-                            ) : (
-                              <GitBranch className="h-3.5 w-3.5 text-zinc-400" />
-                            )}
-                            <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
-                              {w.source_type === 'image' ? w.image : w.git_repo}
-                            </code>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm text-zinc-600">
-                            {projectNames[w.project_id] || w.project_id.slice(0, 8)}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          {w.addons.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {w.addons.map((a) => (
-                                <Badge key={a.id} variant="secondary" className="text-xs font-normal bg-zinc-100 text-zinc-600">
-                                  <Database className="h-3 w-3 mr-1" />
-                                  {a.addon_name}
-                                </Badge>
-                              ))}
-                            </div>
+        <Card className="border-zinc-200">
+          <CardContent className="pt-4">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Project</TableHead>
+                  <TableHead>Replicas</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {workloads.map((w) => {
+                  const source = w.image ?? w.git_source ?? '—';
+                  const isImage = !!w.image;
+                  return (
+                    <TableRow
+                      key={w.id}
+                      className="cursor-pointer"
+                      onClick={() => router.push(`/workloads/${w.id}`)}
+                    >
+                      <TableCell>
+                        <p className="font-medium text-zinc-900">{w.name}</p>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5">
+                          {isImage ? (
+                            <Container className="h-3.5 w-3.5 text-zinc-400" />
                           ) : (
-                            <span className="text-xs text-zinc-400">None</span>
+                            <GitBranch className="h-3.5 w-3.5 text-zinc-400" />
                           )}
-                        </TableCell>
-                        <TableCell>
-                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[w.phase] ?? ''}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${statusDots[w.phase] ?? ''}`} />
-                            {w.phase}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-zinc-400 hover:text-red-500"
-                            onClick={(e) => { e.stopPropagation(); handleDeleteWorkload(w.id); }}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Deployed Stacks */}
-          {hasStacks && (
-            <Card className="border-zinc-200">
-              <CardHeader className="pb-0">
-                <CardTitle className="text-base">Stacks</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Stack</TableHead>
-                      <TableHead>Template</TableHead>
-                      <TableHead>Components</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Deployed</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                          <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{source}</code>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm text-zinc-600">
+                          {projectNames[w.project_id] ?? w.project_id.slice(0, 8)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm text-zinc-600">
+                          {w.ready_replicas}/{w.replicas}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[w.phase] ?? ''}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${statusDots[w.phase] ?? ''}`} />
+                          {w.phase}
+                        </span>
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {stacks.map((stack) => (
-                      <TableRow
-                        key={stack.id}
-                        className="cursor-pointer"
-                        onClick={() => router.push(`/apps/stacks/${stack.id}`)}
-                      >
-                        <TableCell>
-                          <div>
-                            <p className="font-medium text-zinc-900">{stack.name}</p>
-                            <p className="text-xs text-zinc-400 font-mono">{stack.workload_name}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm text-zinc-600">{stack.template_name}</span>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-1">
-                            {stack.image && (
-                              <Badge variant="secondary" className="text-xs font-normal bg-zinc-100 text-zinc-600">
-                                <Container className="h-3 w-3 mr-1" />
-                                {stack.image.split(':')[0].split('/').pop()}
-                              </Badge>
-                            )}
-                            {stack.addons.map((addon) => (
-                              <Badge key={addon} variant="secondary" className="text-xs font-normal bg-zinc-100 text-zinc-600">
-                                <Database className="h-3 w-3 mr-1" />
-                                {addon}
-                              </Badge>
-                            ))}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[stack.status] ?? ''}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${statusDots[stack.status] ?? ''}`} />
-                            {stack.status}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-xs text-zinc-500">{new Date(stack.created_at).toLocaleDateString()}</span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-zinc-400 hover:text-red-500"
-                            onClick={(e) => { e.stopPropagation(); handleDeleteStack(stack.id); }}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          )}
-        </>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
