@@ -36,6 +36,11 @@ export const addonInstancesApi = {
   list: (projectId: string) =>
     apiClient.get<AddonInstanceListResponse>(`/addon-instances?project_id=${projectId}`),
 
+  listByOrg: (orgId: string, itemsPerPage = 100) =>
+    apiClient.get<AddonInstanceListResponse>(
+      `/addon-instances?org_id=${orgId}&items_per_page=${itemsPerPage}`
+    ),
+
   get: (id: string) =>
     apiClient.get<AddonInstance>(`/addon-instances/${id}`),
 

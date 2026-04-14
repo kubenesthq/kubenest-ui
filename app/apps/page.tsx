@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useQueries } from '@tanstack/react-query';
-import { Layers, Container, GitBranch, Package } from 'lucide-react';
+import { Layers, Container, GitBranch, Package, Database } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,6 +13,7 @@ import { useCurrentOrg } from '@/hooks/useOrganization';
 import { workloadsApi } from '@/lib/api/workloads';
 import { clustersApi } from '@/lib/api/clusters';
 import { stackTemplatesApi } from '@/lib/api/stack-templates';
+import { addonInstancesApi } from '@/lib/api/addons';
 
 const statusColors: Record<string, string> = {
   running: 'bg-emerald-100 text-emerald-700',
@@ -51,6 +52,13 @@ export default function AppsPage() {
     refetchInterval: 15000,
   });
 
+  const addonsQuery = useQuery({
+    queryKey: ['addon-instances', 'org', orgId],
+    queryFn: () => addonInstancesApi.listByOrg(orgId!),
+    enabled: !!orgId,
+    refetchInterval: 15000,
+  });
+
   const clustersQuery = useQuery({
     queryKey: ['clusters', orgId],
     queryFn: () => clustersApi.list(orgId!),
@@ -79,10 +87,12 @@ export default function AppsPage() {
 
   const workloads = workloadsQuery.data?.data ?? [];
   const stacks = stacksQuery.data?.data ?? [];
-  const isLoading = workloadsQuery.isLoading || stacksQuery.isLoading;
+  const addons = addonsQuery.data?.data ?? [];
+  const isLoading = workloadsQuery.isLoading || stacksQuery.isLoading || addonsQuery.isLoading;
   const hasWorkloads = workloads.length > 0;
   const hasStacks = stacks.length > 0;
-  const hasAnything = hasWorkloads || hasStacks;
+  const hasAddons = addons.length > 0;
+  const hasAnything = hasWorkloads || hasStacks || hasAddons;
 
   return (
     <div className="px-8 py-8 space-y-6 max-w-5xl">
@@ -175,6 +185,54 @@ export default function AppsPage() {
                       <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[s.phase.toLowerCase()] ?? 'bg-zinc-100 text-zinc-600'}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${statusDots[s.phase.toLowerCase()] ?? 'bg-zinc-400'}`} />
                         {s.phase}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+        )}
+
+        {hasAddons && (
+        <Card className="border-zinc-200">
+          <CardHeader className="pb-0">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Database className="h-4 w-4 text-zinc-500" />
+              Addons
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Project</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {addons.map((a) => (
+                  <TableRow key={a.id}>
+                    <TableCell>
+                      <p className="font-medium text-zinc-900">{a.name}</p>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className="text-xs font-normal bg-zinc-100 text-zinc-600">
+                        {a.type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-sm text-zinc-600">
+                        {projectNames[a.project_id] ?? a.project_id.slice(0, 8)}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[a.phase.toLowerCase()] ?? 'bg-zinc-100 text-zinc-600'}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${statusDots[a.phase.toLowerCase()] ?? 'bg-zinc-400'}`} />
+                        {a.phase}
                       </span>
                     </TableCell>
                   </TableRow>
