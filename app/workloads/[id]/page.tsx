@@ -1,102 +1,75 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useState } from 'react';
+import { useParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
 import Link from 'next/link';
-import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, Minus, Plus, Loader2 } from 'lucide-react';
+import {
+  ChevronRight,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+  RotateCw,
+  Star,
+  Check,
+  X as XIcon,
+  Pencil,
+} from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { WorkloadStatusBadge } from '@/components/workloads/WorkloadStatusBadge';
-import { PhaseIndicator } from '@/components/workloads/PhaseIndicator';
-import { WorkloadSecretsCard } from '@/components/workloads/WorkloadSecretsCard';
-import { WorkloadEditDialog } from '@/components/workloads/WorkloadEditDialog';
 import { DeploymentHistoryCard } from '@/components/workloads/DeploymentHistoryCard';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { useWorkload, useScaleWorkload, useDeleteWorkload } from '@/hooks/useWorkloads';
+  useWorkload,
+  useUpdateWorkload,
+  useRedeployWorkload,
+} from '@/hooks/useWorkloads';
 import { useSSE } from '@/hooks/useSSE';
+import { useCurrentOrg } from '@/hooks/useOrganization';
 import { getProject } from '@/api/projects';
+import { getCluster } from '@/api/clusters';
+import { useToast } from '@/components/ui/use-toast';
 import { WORKLOAD_LIMITS } from '@/lib/constants/workloads';
 
 const fadeInUp = {
-  initial: { opacity: 0, y: 20 },
+  initial: { opacity: 0, y: 12 },
   animate: { opacity: 1, y: 0 },
 };
-
 const easeOutQuart = [0.25, 1, 0.5, 1] as const;
 
+type EditField = 'image' | 'replicas' | 'port' | null;
+
 export default function WorkloadDetailPage() {
-  const router = useRouter();
   const params = useParams();
   const workloadId = params.id as string;
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [showEditDialog, setShowEditDialog] = useState(false);
-  const [desiredReplicas, setDesiredReplicas] = useState<number>(1);
-  const [isScaling, setIsScaling] = useState(false);
-  const [showHelmValues, setShowHelmValues] = useState(false);
+  const { toast } = useToast();
 
-  const { connected, reconnecting } = useSSE(
-    { resource_type: 'workload', workload_id: workloadId },
-    !!workloadId
-  );
+  useSSE({ resource_type: 'workload', workload_id: workloadId }, !!workloadId);
 
-  const { data: workload, isLoading: workloadLoading } = useWorkload(workloadId);
+  const { data: workload, isLoading } = useWorkload(workloadId);
+  const updateMutation = useUpdateWorkload(workloadId);
+  const redeployMutation = useRedeployWorkload(workloadId);
 
-  useEffect(() => {
-    if (workload) {
-      setDesiredReplicas(workload.replicas);
-    }
-  }, [workload]);
-
-  const { data: projectData } = useQuery({
+  const { data: project } = useQuery({
     queryKey: ['project', workload?.project_id],
     queryFn: () => getProject(workload!.project_id),
     enabled: !!workload?.project_id,
   });
-  const project = projectData;
+  const { data: cluster } = useQuery({
+    queryKey: ['cluster', project?.cluster_id],
+    queryFn: () => getCluster(project!.cluster_id),
+    enabled: !!project?.cluster_id,
+  });
+  const { org } = useCurrentOrg();
 
-  const scaleMutation = useScaleWorkload(workloadId);
-  const deleteMutation = useDeleteWorkload();
+  const [favorite, setFavorite] = useState(false);
+  const [editField, setEditField] = useState<EditField>(null);
+  const [draft, setDraft] = useState<string>('');
 
-  const handleScale = () => {
-    if (desiredReplicas === workload?.replicas) return;
-    setIsScaling(true);
-    scaleMutation.mutate(desiredReplicas, {
-      onSuccess: () => setIsScaling(false),
-      onError: (error: Error) => {
-        alert(`Failed to scale workload: ${error.message}`);
-        setIsScaling(false);
-        setDesiredReplicas(workload?.replicas || 1);
-      },
-    });
-  };
-
-  const handleDelete = () => {
-    deleteMutation.mutate(workloadId, {
-      onSuccess: () => router.push(`/projects/${workload?.project_id}`),
-      onError: (error: Error) => {
-        alert(`Failed to delete workload: ${error.message}`);
-        setShowDeleteDialog(false);
-      },
-    });
-  };
-
-  const incrementReplicas = () =>
-    setDesiredReplicas((prev) => Math.min(prev + 1, WORKLOAD_LIMITS.MAX_REPLICAS));
-  const decrementReplicas = () =>
-    setDesiredReplicas((prev) => Math.max(prev - 1, WORKLOAD_LIMITS.MIN_REPLICAS));
-
-  if (workloadLoading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center py-32">
         <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
@@ -106,7 +79,7 @@ export default function WorkloadDetailPage() {
 
   if (!workload) {
     return (
-      <div className="px-8 py-8 max-w-5xl">
+      <div className="px-8 py-8 max-w-6xl">
         <Card className="border-zinc-200">
           <CardContent className="pt-6 text-center text-sm text-zinc-400">
             Workload not found
@@ -116,486 +89,381 @@ export default function WorkloadDetailPage() {
     );
   }
 
-  const hasReplicaChanges = desiredReplicas !== workload.replicas;
+  const startEdit = (field: Exclude<EditField, null>, current: string) => {
+    setEditField(field);
+    setDraft(current);
+  };
+
+  const cancelEdit = () => {
+    setEditField(null);
+    setDraft('');
+  };
+
+  const saveEdit = () => {
+    if (!editField) return;
+    const trimmed = draft.trim();
+    if (editField === 'image') {
+      if (!trimmed || trimmed === workload.image) return cancelEdit();
+      updateMutation.mutate(
+        { image: trimmed },
+        {
+          onSuccess: () => {
+            toast({ title: 'Image updated', description: trimmed });
+            cancelEdit();
+          },
+          onError: (err: Error) =>
+            toast({ title: 'Update failed', description: err.message, variant: 'error' }),
+        }
+      );
+      return;
+    }
+    const numeric = parseInt(trimmed, 10);
+    if (Number.isNaN(numeric)) return cancelEdit();
+    if (editField === 'replicas') {
+      const clamped = Math.max(
+        WORKLOAD_LIMITS.MIN_REPLICAS,
+        Math.min(WORKLOAD_LIMITS.MAX_REPLICAS, numeric)
+      );
+      if (clamped === workload.replicas) return cancelEdit();
+      updateMutation.mutate(
+        { replicas: clamped },
+        {
+          onSuccess: () => {
+            toast({ title: 'Replicas updated', description: `${clamped}` });
+            cancelEdit();
+          },
+          onError: (err: Error) =>
+            toast({ title: 'Update failed', description: err.message, variant: 'error' }),
+        }
+      );
+      return;
+    }
+    if (editField === 'port') {
+      if (numeric === workload.port) return cancelEdit();
+      updateMutation.mutate(
+        { port: numeric },
+        {
+          onSuccess: () => {
+            toast({ title: 'Port updated', description: `${numeric}` });
+            cancelEdit();
+          },
+          onError: (err: Error) =>
+            toast({ title: 'Update failed', description: err.message, variant: 'error' }),
+        }
+      );
+    }
+  };
+
+  const handleRedeploy = () => {
+    redeployMutation.mutate(undefined, {
+      onSuccess: () => toast({ title: 'Redeploy triggered' }),
+      onError: (err: Error) =>
+        toast({ title: 'Redeploy failed', description: err.message, variant: 'error' }),
+    });
+  };
+
+  const primaryUrl = workload.url;
 
   return (
-    <div className="px-8 py-8 max-w-5xl space-y-6">
+    <div className="px-8 py-8 max-w-6xl space-y-6">
       {/* Breadcrumb */}
-      {project && (
-        <motion.div
-          variants={fadeInUp}
-          initial="initial"
-          animate="animate"
-          transition={{ duration: 0.3, ease: easeOutQuart }}
-        >
-          <Button
-            variant="ghost"
-            size="sm"
-            asChild
-            className="h-7 px-2 text-zinc-400 hover:text-zinc-700 -ml-2"
-          >
-            <Link href={`/projects/${project.id}`}>
-              <ArrowLeft className="h-3.5 w-3.5 mr-1.5" />
+      <motion.nav
+        variants={fadeInUp}
+        initial="initial"
+        animate="animate"
+        transition={{ duration: 0.3, ease: easeOutQuart }}
+        className="flex items-center gap-1.5 text-sm text-zinc-500"
+      >
+        {cluster && (
+          <>
+            <Link href={`/clusters/${cluster.id}`} className="hover:text-zinc-900">
+              {cluster.name}
+            </Link>
+            <ChevronRight className="h-3.5 w-3.5 text-zinc-300" />
+          </>
+        )}
+        {project && (
+          <>
+            <Link href={`/projects/${project.id}`} className="hover:text-zinc-900">
               {project.name}
             </Link>
-          </Button>
-        </motion.div>
-      )}
+            <ChevronRight className="h-3.5 w-3.5 text-zinc-300" />
+          </>
+        )}
+        <span className="text-zinc-900 font-medium">{workload.name}</span>
+      </motion.nav>
 
       {/* Header */}
       <motion.div
-        className="flex items-start justify-between"
         variants={fadeInUp}
         initial="initial"
         animate="animate"
         transition={{ duration: 0.4, delay: 0.05, ease: easeOutQuart }}
+        className="space-y-3"
       >
-        <div>
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-3xl font-bold tracking-tight text-zinc-900">{workload.name}</h1>
-            <WorkloadStatusBadge phase={workload.phase} />
-            {/* SSE connection indicator */}
-            {connected ? (
-              <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-50 text-emerald-700 rounded-md border border-emerald-200 text-xs font-medium">
-                <motion.span
-                  className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"
-                  animate={{ scale: [1, 1.5, 1], opacity: [1, 0.5, 1] }}
-                  transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
-                />
-                Live
-              </div>
-            ) : reconnecting ? (
-              <div className="flex items-center gap-1.5 px-2 py-1 bg-amber-50 text-amber-700 rounded-md border border-amber-200 text-xs font-medium">
-                <motion.span
-                  className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block"
-                  animate={{ opacity: [1, 0.35, 1] }}
-                  transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
-                />
-                Reconnecting...
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 px-2 py-1 bg-zinc-50 text-zinc-400 rounded-md border border-zinc-200 text-xs font-medium">
-                <span className="w-1.5 h-1.5 rounded-full bg-zinc-300 inline-block" />
-                Offline
-              </div>
-            )}
-          </div>
-          <p className="text-sm text-zinc-500 mt-1">
-            Created {format(new Date(workload.created_at), 'MMMM d, yyyy')}
-            {project && (
-              <>
-                {' · '}
-                <Link
-                  href={`/projects/${project.id}`}
-                  className="text-blue-600 hover:underline"
-                >
-                  {project.name}
-                </Link>
-              </>
-            )}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowEditDialog(true)}
-          >
-            Edit
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => setShowDeleteDialog(true)}
-          >
-            Delete
-          </Button>
-        </div>
-      </motion.div>
-
-      {/* Deployment Progress */}
-      <motion.div
-        variants={fadeInUp}
-        initial="initial"
-        animate="animate"
-        transition={{ duration: 0.4, delay: 0.12, ease: easeOutQuart }}
-      >
-        <Card className="border-zinc-200">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold text-zinc-900">
-              Deployment Progress
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <PhaseIndicator currentPhase={workload.phase} />
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* Details + Scale Controls */}
-      <div className="grid gap-6 md:grid-cols-2">
-        <motion.div
-          variants={fadeInUp}
-          initial="initial"
-          animate="animate"
-          transition={{ duration: 0.4, delay: 0.18, ease: easeOutQuart }}
-        >
-          <Card className="border-zinc-200">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold text-zinc-900">
-                Workload Details
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {[
-                workload.chart_config?.chart
-                  ? {
-                      label: 'Helm Chart',
-                      value: (
-                        <code className="text-xs bg-zinc-100 text-zinc-700 px-2 py-1 rounded font-mono block truncate">
-                          {workload.chart_config.chart.name}@{workload.chart_config.chart.version}
-                          <span className="text-zinc-400 ml-1">({workload.chart_config.chart.repo})</span>
-                        </code>
-                      ),
-                    }
-                  : {
-                      label: 'Image',
-                      value: (
-                        <code className="text-xs bg-zinc-100 text-zinc-700 px-2 py-1 rounded font-mono block truncate">
-                          {workload.image}
-                        </code>
-                      ),
-                    },
-                {
-                  label: 'Port',
-                  value: (
-                    <span className="text-sm text-zinc-700">
-                      {workload.port || 'Not specified'}
-                    </span>
-                  ),
-                },
-                {
-                  label: 'Status',
-                  value: <WorkloadStatusBadge phase={workload.phase} />,
-                },
-                {
-                  label: 'Replicas',
-                  value: (
-                    <span className="text-2xl font-bold tracking-tight text-zinc-900">
-                      {workload.replicas}
-                    </span>
-                  ),
-                },
-                {
-                  label: 'Created',
-                  value: (
-                    <span className="text-sm text-zinc-700">
-                      {format(new Date(workload.created_at), 'PPpp')}
-                    </span>
-                  ),
-                },
-                ...(workload.updated_at
-                  ? [
-                      {
-                        label: 'Last Updated',
-                        value: (
-                          <span className="text-sm text-zinc-700">
-                            {format(new Date(workload.updated_at), 'PPpp')}
-                          </span>
-                        ),
-                      },
-                    ]
-                  : []),
-              ].map(({ label, value }) => (
-                <div key={label}>
-                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-400 mb-1.5">
-                    {label}
-                  </p>
-                  {value}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div
-          variants={fadeInUp}
-          initial="initial"
-          animate="animate"
-          transition={{ duration: 0.4, delay: 0.22, ease: easeOutQuart }}
-        >
-          <Card className="border-zinc-200">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold text-zinc-900">
-                Scale Controls
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-zinc-400 mb-3">
-                  Adjust Replicas
-                </p>
-                <div className="flex items-center gap-3">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={decrementReplicas}
-                    disabled={isScaling || desiredReplicas <= WORKLOAD_LIMITS.MIN_REPLICAS}
-                    aria-label="Decrease replica count"
-                  >
-                    <Minus className="h-4 w-4" />
-                  </Button>
-                  <Input
-                    type="number"
-                    min={WORKLOAD_LIMITS.MIN_REPLICAS}
-                    max={WORKLOAD_LIMITS.MAX_REPLICAS}
-                    value={desiredReplicas}
-                    onChange={(e) =>
-                      setDesiredReplicas(
-                        Math.max(WORKLOAD_LIMITS.MIN_REPLICAS, parseInt(e.target.value) || 0)
-                      )
-                    }
-                    disabled={isScaling}
-                    className="w-24 text-center text-lg font-semibold"
-                    aria-label="Number of replicas"
-                  />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={incrementReplicas}
-                    disabled={isScaling || desiredReplicas >= WORKLOAD_LIMITS.MAX_REPLICAS}
-                    aria-label="Increase replica count"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between py-3 px-4 bg-zinc-50 rounded-lg border border-zinc-100">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-400 mb-1">
-                    Current
-                  </p>
-                  <p className="text-2xl font-bold tracking-tight text-zinc-900">
-                    {workload.replicas}
-                  </p>
-                </div>
-                <span className="text-zinc-300 text-xl">→</span>
-                <div className="text-right">
-                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-400 mb-1">
-                    Desired
-                  </p>
-                  <p className="text-2xl font-bold tracking-tight text-blue-600">
-                    {desiredReplicas}
-                  </p>
-                </div>
-              </div>
-
-              <Button
-                onClick={handleScale}
-                disabled={!hasReplicaChanges || isScaling}
-                className="w-full"
-              >
-                {isScaling ? 'Scaling...' : 'Apply Scale Changes'}
-              </Button>
-
-              {hasReplicaChanges && !isScaling && (
-                <p className="text-xs text-zinc-400 text-center">
-                  Scale from {workload.replicas} → {desiredReplicas} replicas
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </motion.div>
-      </div>
-
-      {/* Ingress */}
-      {workload.ingress_config?.enabled && (
-        <motion.div
-          variants={fadeInUp}
-          initial="initial"
-          animate="animate"
-          transition={{ duration: 0.4, delay: 0.28, ease: easeOutQuart }}
-        >
-          <Card className="border-zinc-200">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold text-zinc-900">Ingress</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                {[
-                  { label: 'Host', value: workload.ingress_config.host },
-                  { label: 'Path', value: workload.ingress_config.path },
-                  {
-                    label: 'TLS',
-                    value: workload.ingress_config.tls_secret
-                      ? `Enabled (${workload.ingress_config.tls_secret})`
-                      : 'Not configured',
-                  },
-                ].map(({ label, value }) => (
-                  <div key={label}>
-                    <p className="text-xs font-medium uppercase tracking-wide text-zinc-400 mb-1.5">
-                      {label}
-                    </p>
-                    <span className="text-sm text-zinc-700">{value}</span>
-                  </div>
-                ))}
-                {workload.ingress_config.host && (
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-zinc-400 mb-1.5">
-                      External URL
-                    </p>
-                    <a
-                      href={`${workload.ingress_config.tls_secret ? 'https' : 'http'}://${workload.ingress_config.host}${workload.ingress_config.path}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-blue-600 hover:underline inline-flex items-center gap-1"
-                    >
-                      {workload.ingress_config.tls_secret ? 'https' : 'http'}://
-                      {workload.ingress_config.host}
-                      {workload.ingress_config.path}
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
-                  </div>
-                )}
-              </div>
-              {workload.ingress_config.annotations &&
-                Object.keys(workload.ingress_config.annotations).length > 0 && (
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-zinc-400 mb-2">
-                      Annotations
-                    </p>
-                    <div className="bg-zinc-100 rounded-md p-3 space-y-1">
-                      {Object.entries(workload.ingress_config.annotations).map(([key, value]) => (
-                        <div key={key} className="text-xs font-mono text-zinc-600">
-                          <span className="text-zinc-400">{key}:</span> {value}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
-
-      {/* Environment Variables */}
-      {workload.env_config && workload.env_config.length > 0 && (
-        <motion.div
-          variants={fadeInUp}
-          initial="initial"
-          animate="animate"
-          transition={{ duration: 0.4, delay: 0.26, ease: easeOutQuart }}
-        >
-          <Card className="border-zinc-200">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold text-zinc-900">
-                Environment Variables
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="bg-zinc-50 border border-zinc-100 rounded-md p-3 space-y-1">
-                {workload.env_config.map((env) => (
-                  <div key={env.name} className="text-xs font-mono text-zinc-600">
-                    <span className="text-zinc-400">{env.name}=</span>
-                    {env.value ?? (env.valueFrom ? '<from-secret>' : '')}
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
-
-      {/* Secrets */}
-      <motion.div
-        variants={fadeInUp}
-        initial="initial"
-        animate="animate"
-        transition={{ duration: 0.4, delay: 0.28, ease: easeOutQuart }}
-      >
-        <WorkloadSecretsCard workloadId={workloadId} />
-      </motion.div>
-
-      {/* Helm Values */}
-      {workload.chart_config?.values && Object.keys(workload.chart_config.values).length > 0 && (
-        <motion.div
-          variants={fadeInUp}
-          initial="initial"
-          animate="animate"
-          transition={{ duration: 0.4, delay: 0.30, ease: easeOutQuart }}
-        >
-          <Card className="border-zinc-200">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3 flex-wrap min-w-0">
             <button
               type="button"
-              className="flex items-center justify-between w-full px-6 py-4 text-left"
-              onClick={() => setShowHelmValues(!showHelmValues)}
+              onClick={() => setFavorite((f) => !f)}
+              aria-label={favorite ? 'Unfavorite' : 'Favorite'}
+              className="text-zinc-300 hover:text-amber-500 transition-colors"
             >
-              <CardTitle className="text-base font-semibold text-zinc-900">Helm Values</CardTitle>
-              {showHelmValues ? (
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              )}
+              <Star
+                className={`h-5 w-5 ${favorite ? 'fill-amber-400 text-amber-500' : ''}`}
+              />
             </button>
-            {showHelmValues && (
-              <CardContent className="pt-0">
-                <pre className="bg-zinc-50 border border-zinc-100 rounded-md p-3 text-xs font-mono text-zinc-700 overflow-x-auto">
-                  {JSON.stringify(workload.chart_config.values, null, 2)}
-                </pre>
-              </CardContent>
+            <h1 className="text-3xl font-bold tracking-tight text-zinc-900 truncate">
+              {workload.name}
+            </h1>
+            <WorkloadStatusBadge phase={workload.phase} />
+            {primaryUrl && (
+              <a
+                href={primaryUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
+              >
+                {primaryUrl.replace(/^https?:\/\//, '')}
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
             )}
-          </Card>
-        </motion.div>
-      )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button variant="outline" size="sm" disabled title="Restart coming soon">
+              <RotateCw className="h-3.5 w-3.5 mr-1.5" />
+              Restart
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleRedeploy}
+              disabled={redeployMutation.isPending}
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 mr-1.5 ${redeployMutation.isPending ? 'animate-spin' : ''}`}
+              />
+              {redeployMutation.isPending ? 'Deploying...' : 'Redeploy'}
+            </Button>
+          </div>
+        </div>
 
-      {/* Deployment History */}
+        {/* Chips */}
+        <div className="flex items-center gap-2 flex-wrap text-xs">
+          {org && <Chip label="Org" value={org.name} />}
+          {project && <Chip label="Project" value={project.name} />}
+          {cluster && <Chip label="Cluster" value={cluster.name} />}
+          {project && <Chip label="Namespace" value={project.namespace} />}
+        </div>
+      </motion.div>
+
+      {/* Inline-edit strip */}
       <motion.div
         variants={fadeInUp}
         initial="initial"
         animate="animate"
-        transition={{ duration: 0.4, delay: 0.32, ease: easeOutQuart }}
+        transition={{ duration: 0.4, delay: 0.1, ease: easeOutQuart }}
+        className="flex items-stretch gap-0 rounded-lg border border-zinc-200 bg-white divide-x divide-zinc-200 overflow-hidden"
       >
-        <DeploymentHistoryCard workloadId={workloadId} />
+        <EditCell
+          label="Image"
+          value={workload.image ?? '—'}
+          monospace
+          editing={editField === 'image'}
+          draft={draft}
+          onDraftChange={setDraft}
+          onStart={() => startEdit('image', workload.image ?? '')}
+          onSave={saveEdit}
+          onCancel={cancelEdit}
+          saving={updateMutation.isPending && editField === 'image'}
+          disabled={!!workload.chart_config?.chart}
+        />
+        <EditCell
+          label="Replicas"
+          value={`${workload.replicas}`}
+          editing={editField === 'replicas'}
+          draft={draft}
+          onDraftChange={setDraft}
+          onStart={() => startEdit('replicas', `${workload.replicas}`)}
+          onSave={saveEdit}
+          onCancel={cancelEdit}
+          saving={updateMutation.isPending && editField === 'replicas'}
+          inputType="number"
+        />
+        <EditCell
+          label="Port"
+          value={workload.port ? `${workload.port}` : '—'}
+          editing={editField === 'port'}
+          draft={draft}
+          onDraftChange={setDraft}
+          onStart={() => startEdit('port', workload.port ? `${workload.port}` : '')}
+          onSave={saveEdit}
+          onCancel={cancelEdit}
+          saving={updateMutation.isPending && editField === 'port'}
+          inputType="number"
+        />
       </motion.div>
 
-      {/* Edit Dialog */}
-      {workload && (
-        <WorkloadEditDialog
-          workload={workload}
-          open={showEditDialog}
-          onOpenChange={setShowEditDialog}
-        />
-      )}
+      {/* Tabs */}
+      <motion.div
+        variants={fadeInUp}
+        initial="initial"
+        animate="animate"
+        transition={{ duration: 0.4, delay: 0.15, ease: easeOutQuart }}
+      >
+        <Tabs defaultValue="deployments" className="w-full">
+          <TabsList className="h-10">
+            <TabsTrigger value="deployments">Deployments</TabsTrigger>
+            <TabsTrigger value="environment">Environment</TabsTrigger>
+            <TabsTrigger value="domains">Domains</TabsTrigger>
+            <TabsTrigger value="logs">Logs</TabsTrigger>
+            <TabsTrigger value="metrics">Metrics</TabsTrigger>
+            <TabsTrigger value="settings">Settings</TabsTrigger>
+          </TabsList>
 
-      {/* Delete Dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Workload</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete <strong>{workload.name}</strong>? This will remove
-              the workload from Kubernetes and cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowDeleteDialog(false)}
-              disabled={deleteMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={deleteMutation.isPending}
-            >
-              {deleteMutation.isPending ? 'Deleting...' : 'Delete Workload'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <TabsContent value="deployments" className="mt-4">
+            <DeploymentHistoryCard workloadId={workloadId} />
+          </TabsContent>
+
+          <TabsContent value="environment" className="mt-4">
+            <TabEmpty title="Environment" message="Env var management coming soon." />
+          </TabsContent>
+
+          <TabsContent value="domains" className="mt-4">
+            <TabEmpty title="Domains" message="Ingress and domain management coming soon." />
+          </TabsContent>
+
+          <TabsContent value="logs" className="mt-4">
+            <TabEmpty title="Logs" message="Live log streaming coming soon." />
+          </TabsContent>
+
+          <TabsContent value="metrics" className="mt-4">
+            <TabEmpty
+              title="Metrics"
+              message="Grafana panels embed when monitoring lands."
+            />
+          </TabsContent>
+
+          <TabsContent value="settings" className="mt-4">
+            <TabEmpty title="Settings" message="Workload settings and danger zone coming soon." />
+          </TabsContent>
+        </Tabs>
+      </motion.div>
     </div>
+  );
+}
+
+function Chip({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-zinc-600">
+      <span className="text-zinc-400">{label}</span>
+      <span className="font-medium text-zinc-700">{value}</span>
+    </span>
+  );
+}
+
+interface EditCellProps {
+  label: string;
+  value: string;
+  editing: boolean;
+  draft: string;
+  onDraftChange: (v: string) => void;
+  onStart: () => void;
+  onSave: () => void;
+  onCancel: () => void;
+  saving: boolean;
+  monospace?: boolean;
+  inputType?: 'text' | 'number';
+  disabled?: boolean;
+}
+
+function EditCell({
+  label,
+  value,
+  editing,
+  draft,
+  onDraftChange,
+  onStart,
+  onSave,
+  onCancel,
+  saving,
+  monospace,
+  inputType = 'text',
+  disabled,
+}: EditCellProps) {
+  return (
+    <div className="flex-1 min-w-0 px-4 py-3">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1">
+        {label}
+      </p>
+      {editing ? (
+        <div className="flex items-center gap-1.5">
+          <Input
+            autoFocus
+            type={inputType}
+            value={draft}
+            onChange={(e) => onDraftChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onSave();
+              if (e.key === 'Escape') onCancel();
+            }}
+            disabled={saving}
+            className="h-7 text-sm"
+          />
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={onSave}
+            disabled={saving}
+            aria-label="Save"
+            className="h-7 w-7 shrink-0"
+          >
+            {saving ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Check className="h-3.5 w-3.5" />
+            )}
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={onCancel}
+            disabled={saving}
+            aria-label="Cancel"
+            className="h-7 w-7 shrink-0"
+          >
+            <XIcon className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={disabled ? undefined : onStart}
+          disabled={disabled}
+          className={`group flex items-center gap-2 w-full text-left ${
+            disabled ? 'cursor-not-allowed opacity-70' : 'hover:text-blue-600'
+          }`}
+        >
+          <span
+            className={`truncate text-sm text-zinc-900 ${monospace ? 'font-mono' : 'font-medium'}`}
+          >
+            {value}
+          </span>
+          {!disabled && (
+            <Pencil className="h-3 w-3 text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+          )}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function TabEmpty({ title, message }: { title: string; message: string }) {
+  return (
+    <Card className="border-zinc-200 border-dashed">
+      <CardContent className="py-16 text-center">
+        <p className="text-sm font-semibold text-zinc-700">{title}</p>
+        <p className="text-sm text-zinc-400 mt-1">{message}</p>
+      </CardContent>
+    </Card>
   );
 }

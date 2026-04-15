@@ -51,6 +51,17 @@ export function useScaleWorkload(workloadId: string) {
   });
 }
 
+export function useRedeployWorkload(workloadId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => workloadsApi.redeploy(workloadId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workload', workloadId] });
+      queryClient.invalidateQueries({ queryKey: ['workload-deployments', workloadId] });
+    },
+  });
+}
+
 export function useDeleteWorkload() {
   const queryClient = useQueryClient();
   return useMutation({
