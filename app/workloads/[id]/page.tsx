@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { WorkloadStatusBadge } from '@/components/workloads/WorkloadStatusBadge';
 import { DeploymentHistoryCard } from '@/components/workloads/DeploymentHistoryCard';
+import { WorkloadSettingsTab } from '@/components/workloads/WorkloadSettingsTab';
 import {
   useWorkload,
   useUpdateWorkload,
@@ -344,7 +345,7 @@ export default function WorkloadDetailPage() {
           </TabsContent>
 
           <TabsContent value="settings" className="mt-4">
-            <TabEmpty title="Settings" message="Workload settings and danger zone coming soon." />
+            <WorkloadSettingsTab workload={workload} />
           </TabsContent>
         </Tabs>
       </motion.div>
