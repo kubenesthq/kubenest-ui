@@ -24,6 +24,7 @@ import { WorkloadStatusBadge } from '@/components/workloads/WorkloadStatusBadge'
 import { DeploymentHistoryCard } from '@/components/workloads/DeploymentHistoryCard';
 import { WorkloadSettingsTab } from '@/components/workloads/WorkloadSettingsTab';
 import { WorkloadEnvironmentTab } from '@/components/workloads/WorkloadEnvironmentTab';
+import { WorkloadLogsTab } from '@/components/workloads/WorkloadLogsTab';
 import {
   useWorkload,
   useUpdateWorkload,
@@ -335,7 +336,7 @@ export default function WorkloadDetailPage() {
           </TabsContent>
 
           <TabsContent value="logs" className="mt-4">
-            <TabEmpty title="Logs" message="Live log streaming coming soon." />
+            <WorkloadLogsTab workloadId={workloadId} workloadName={workload.name} />
           </TabsContent>
 
           <TabsContent value="metrics" className="mt-4">
