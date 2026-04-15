@@ -1,9 +1,19 @@
 'use client';
 
+import { useState } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
-import { Check, Loader2, X, Clock, User, Bot } from 'lucide-react';
+import { Check, Loader2, X, Clock, User, Bot, RotateCcw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useWorkloadDeployments } from '@/hooks/useWorkloads';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { useWorkloadDeployments, useRollbackDeployment } from '@/hooks/useWorkloads';
 import { cn } from '@/lib/utils';
 import type { DeploymentRecord, DeploymentStatus } from '@/lib/api/workloads';
 
@@ -18,10 +28,19 @@ const statusStyles: Record<DeploymentStatus, { icon: typeof Check; color: string
   failed: { icon: X, color: 'text-red-500 bg-red-50 border-red-200', label: 'Failed' },
 };
 
-function DeploymentRow({ deployment }: { deployment: DeploymentRecord }) {
+function DeploymentRow({
+  deployment,
+  canRollback,
+  onRollback,
+}: {
+  deployment: DeploymentRecord;
+  canRollback: boolean;
+  onRollback: (deployment: DeploymentRecord) => void;
+}) {
   const style = statusStyles[deployment.status];
   const Icon = style.icon;
   const TriggerIcon = deployment.triggered_by === 'user' ? User : Bot;
+  const hasPriorState = !!deployment.prior_state;
 
   return (
     <div className="flex items-start gap-3 py-3 border-b border-zinc-100 last:border-0">
@@ -51,12 +70,37 @@ function DeploymentRow({ deployment }: { deployment: DeploymentRecord }) {
           <p className="mt-1 text-xs text-red-600 font-mono break-words">{deployment.error_message}</p>
         )}
       </div>
+      {hasPriorState && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs text-zinc-500 hover:text-zinc-900 shrink-0"
+          disabled={!canRollback}
+          onClick={() => onRollback(deployment)}
+          title="Restore the workload to the state captured before this deployment"
+        >
+          <RotateCcw className="h-3 w-3 mr-1" />
+          Rollback
+        </Button>
+      )}
     </div>
   );
 }
 
 export function DeploymentHistoryCard({ workloadId }: DeploymentHistoryCardProps) {
   const { data, isLoading, error } = useWorkloadDeployments(workloadId);
+  const rollback = useRollbackDeployment(workloadId);
+  const [target, setTarget] = useState<DeploymentRecord | null>(null);
+
+  const handleConfirm = () => {
+    if (!target) return;
+    rollback.mutate(target.id, {
+      onSuccess: () => setTarget(null),
+      onError: (err: Error) => {
+        alert(`Rollback failed: ${err.message}`);
+      },
+    });
+  };
 
   return (
     <Card className="border-zinc-200">
@@ -85,11 +129,46 @@ export function DeploymentHistoryCard({ workloadId }: DeploymentHistoryCardProps
         {data && data.data.length > 0 && (
           <div className="divide-y divide-zinc-100">
             {data.data.map((deployment) => (
-              <DeploymentRow key={deployment.id} deployment={deployment} />
+              <DeploymentRow
+                key={deployment.id}
+                deployment={deployment}
+                canRollback={!rollback.isPending}
+                onRollback={setTarget}
+              />
             ))}
           </div>
         )}
       </CardContent>
+
+      <Dialog open={!!target} onOpenChange={(open) => !open && setTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Roll back this deployment?</DialogTitle>
+            <DialogDescription>
+              The workload will be restored to the configuration captured before{' '}
+              <strong>{target?.description}</strong>
+              {target && (
+                <>
+                  {' '}({formatDistanceToNow(new Date(target.created_at), { addSuffix: true })})
+                </>
+              )}
+              . This will trigger a new deployment.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setTarget(null)}
+              disabled={rollback.isPending}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleConfirm} disabled={rollback.isPending}>
+              {rollback.isPending ? 'Rolling back...' : 'Roll back'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

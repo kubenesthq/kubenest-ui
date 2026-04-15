@@ -69,6 +69,18 @@ export function useWorkloadDeployments(workloadId: string, page = 1, itemsPerPag
   });
 }
 
+export function useRollbackDeployment(workloadId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (deploymentId: string) =>
+      workloadsApi.rollbackDeployment(workloadId, deploymentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workload', workloadId] });
+      queryClient.invalidateQueries({ queryKey: ['workload-deployments', workloadId] });
+    },
+  });
+}
+
 export function useAvailableExports(projectId: string) {
   return useQuery({
     queryKey: ['available-exports', projectId],

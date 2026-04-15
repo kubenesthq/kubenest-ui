@@ -23,6 +23,7 @@ export interface DeploymentRecord {
   error_message: string | null;
   created_at: string;
   completed_at: string | null;
+  prior_state: Record<string, unknown> | null;
 }
 
 export interface DeploymentListResponse {
@@ -74,6 +75,12 @@ export const workloadsApi = {
   listDeployments: (workloadId: string, page = 1, itemsPerPage = 20) =>
     apiClient.get<DeploymentListResponse>(
       `/workloads/${workloadId}/deployments?page=${page}&items_per_page=${itemsPerPage}`
+    ),
+
+  rollbackDeployment: (workloadId: string, deploymentId: string) =>
+    apiClient.post<Workload>(
+      `/workloads/${workloadId}/deployments/${deploymentId}/rollback`,
+      {}
     ),
 };
 
