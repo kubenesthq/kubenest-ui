@@ -25,6 +25,7 @@ import { DeploymentHistoryCard } from '@/components/workloads/DeploymentHistoryC
 import { WorkloadSettingsTab } from '@/components/workloads/WorkloadSettingsTab';
 import { WorkloadEnvironmentTab } from '@/components/workloads/WorkloadEnvironmentTab';
 import { WorkloadLogsTab } from '@/components/workloads/WorkloadLogsTab';
+import { WorkloadDomainsTab } from '@/components/workloads/WorkloadDomainsTab';
 import {
   useWorkload,
   useUpdateWorkload,
@@ -332,7 +333,7 @@ export default function WorkloadDetailPage() {
           </TabsContent>
 
           <TabsContent value="domains" className="mt-4">
-            <TabEmpty title="Domains" message="Ingress and domain management coming soon." />
+            <WorkloadDomainsTab workload={workload} />
           </TabsContent>
 
           <TabsContent value="logs" className="mt-4">
