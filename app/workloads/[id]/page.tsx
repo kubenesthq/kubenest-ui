@@ -272,6 +272,8 @@ export default function WorkloadDetailPage() {
           label="Image"
           value={workload.image ?? '—'}
           monospace
+          wide
+          wrap
           editing={editField === 'image'}
           draft={draft}
           onDraftChange={setDraft}
@@ -378,6 +380,8 @@ interface EditCellProps {
   monospace?: boolean;
   inputType?: 'text' | 'number';
   disabled?: boolean;
+  wide?: boolean;
+  wrap?: boolean;
 }
 
 function EditCell({
@@ -393,9 +397,11 @@ function EditCell({
   monospace,
   inputType = 'text',
   disabled,
+  wide,
+  wrap,
 }: EditCellProps) {
   return (
-    <div className="flex-1 min-w-0 px-4 py-3">
+    <div className={`${wide ? 'flex-[2]' : 'flex-1'} min-w-0 px-4 py-3`}>
       <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1">
         {label}
       </p>
@@ -448,7 +454,10 @@ function EditCell({
           }`}
         >
           <span
-            className={`truncate text-sm text-zinc-900 ${monospace ? 'font-mono' : 'font-medium'}`}
+            className={`text-sm text-zinc-900 ${monospace ? 'font-mono' : 'font-medium'} ${
+              wrap ? 'break-all' : 'truncate'
+            }`}
+            title={value}
           >
             {value}
           </span>
