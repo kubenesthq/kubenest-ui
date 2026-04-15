@@ -61,6 +61,14 @@ export function useDeleteWorkload() {
   });
 }
 
+export function useWorkloadDeployments(workloadId: string, page = 1, itemsPerPage = 20) {
+  return useQuery({
+    queryKey: ['workload-deployments', workloadId, page, itemsPerPage],
+    queryFn: () => workloadsApi.listDeployments(workloadId, page, itemsPerPage),
+    enabled: !!workloadId,
+  });
+}
+
 export function useAvailableExports(projectId: string) {
   return useQuery({
     queryKey: ['available-exports', projectId],

@@ -14,6 +14,7 @@ import { WorkloadStatusBadge } from '@/components/workloads/WorkloadStatusBadge'
 import { PhaseIndicator } from '@/components/workloads/PhaseIndicator';
 import { WorkloadSecretsCard } from '@/components/workloads/WorkloadSecretsCard';
 import { WorkloadEditDialog } from '@/components/workloads/WorkloadEditDialog';
+import { DeploymentHistoryCard } from '@/components/workloads/DeploymentHistoryCard';
 import {
   Dialog,
   DialogContent,
@@ -548,64 +549,14 @@ export default function WorkloadDetailPage() {
         </motion.div>
       )}
 
-      {/* Status Events */}
+      {/* Deployment History */}
       <motion.div
         variants={fadeInUp}
         initial="initial"
         animate="animate"
         transition={{ duration: 0.4, delay: 0.32, ease: easeOutQuart }}
       >
-        <Card className="border-zinc-200">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold text-zinc-900">Status Events</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="flex items-start gap-3 text-sm">
-                <div className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
-                <div>
-                  <p className="font-medium text-zinc-900">Workload created</p>
-                  <p className="text-xs text-zinc-400 mt-0.5">
-                    {format(new Date(workload.created_at), 'PPpp')}
-                  </p>
-                </div>
-              </div>
-              {workload.updated_at && workload.updated_at !== workload.created_at && (
-                <div className="flex items-start gap-3 text-sm">
-                  <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 shrink-0" />
-                  <div>
-                    <p className="font-medium text-zinc-900">Workload updated</p>
-                    <p className="text-xs text-zinc-400 mt-0.5">
-                      {format(new Date(workload.updated_at), 'PPpp')}
-                    </p>
-                  </div>
-                </div>
-              )}
-              {workload.phase === 'Running' && (
-                <div className="flex items-start gap-3 text-sm">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
-                  <div>
-                    <p className="font-medium text-zinc-900">Deployment successful</p>
-                    <p className="text-xs text-zinc-400 mt-0.5">
-                      Running with {workload.replicas} replica(s)
-                    </p>
-                  </div>
-                </div>
-              )}
-              {workload.phase === 'Failed' && (
-                <div className="flex items-start gap-3 text-sm">
-                  <div className="w-2 h-2 rounded-full bg-red-500 mt-1.5 shrink-0" />
-                  <div>
-                    <p className="font-medium text-zinc-900">Deployment failed</p>
-                    <p className="text-xs text-zinc-400 mt-0.5">
-                      Check operator logs for details
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        <DeploymentHistoryCard workloadId={workloadId} />
       </motion.div>
 
       {/* Edit Dialog */}
