@@ -23,6 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { WorkloadStatusBadge } from '@/components/workloads/WorkloadStatusBadge';
 import { DeploymentHistoryCard } from '@/components/workloads/DeploymentHistoryCard';
 import { WorkloadSettingsTab } from '@/components/workloads/WorkloadSettingsTab';
+import { WorkloadEnvironmentTab } from '@/components/workloads/WorkloadEnvironmentTab';
 import {
   useWorkload,
   useUpdateWorkload,
@@ -326,7 +327,7 @@ export default function WorkloadDetailPage() {
           </TabsContent>
 
           <TabsContent value="environment" className="mt-4">
-            <TabEmpty title="Environment" message="Env var management coming soon." />
+            <WorkloadEnvironmentTab workload={workload} />
           </TabsContent>
 
           <TabsContent value="domains" className="mt-4">
