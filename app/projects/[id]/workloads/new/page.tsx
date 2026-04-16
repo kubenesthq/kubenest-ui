@@ -7,13 +7,19 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import Link from 'next/link';
-import { ArrowLeft, Container, GitBranch, Check } from 'lucide-react';
-import { motion } from 'framer-motion';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import {
+  ArrowLeft,
+  Check,
+  FileCode,
+  Layers,
+  ChevronDown,
+  Globe,
+  Plus,
+  X,
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { getProject } from '@/api/projects';
 import { WORKLOAD_LIMITS } from '@/lib/constants/workloads';
 import { workloadsApi } from '@/lib/api/workloads';
@@ -26,20 +32,19 @@ const fadeInUp = {
 const easeOutQuart = [0.25, 1, 0.5, 1] as const;
 
 type SourceType = 'image' | 'git';
+type BuildMethod = 'dockerfile' | 'buildpacks';
 
 const workloadSchema = z.object({
   name: z
     .string()
     .min(1, 'Name is required')
     .regex(/^[a-z0-9-]+$/, 'Lowercase letters, numbers, and dashes only'),
-  // Container image fields
   image: z.string().optional(),
   imageTag: z.string().optional(),
-  // Git repo fields
   gitRepo: z.string().optional(),
   gitBranch: z.string().optional(),
   dockerfilePath: z.string().optional(),
-  // Common deployment settings
+  buildContext: z.string().optional(),
   replicas: z
     .number()
     .int()
@@ -52,19 +57,117 @@ const workloadSchema = z.object({
     .max(65535)
     .optional()
     .nullable(),
+  ingressHost: z.string().optional(),
   envVars: z.string().optional(),
 });
 
 type WorkloadFormData = z.infer<typeof workloadSchema>;
+
+/* ---------- reusable layout pieces ---------- */
+
+function FormRow({
+  label,
+  description,
+  required,
+  children,
+}: {
+  label: string;
+  description?: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grid grid-cols-[240px_1fr] gap-8 items-start py-5">
+      <div className="pt-2">
+        <p className="text-sm font-medium text-zinc-900">
+          {label}
+          {required && <span className="text-destructive ml-0.5">*</span>}
+        </p>
+        {description && (
+          <p className="text-xs text-zinc-500 mt-1 leading-relaxed">{description}</p>
+        )}
+      </div>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function SectionDivider() {
+  return <div className="border-t border-zinc-100" />;
+}
+
+function OptionCard({
+  selected,
+  onClick,
+  icon,
+  title,
+  description,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative p-4 rounded-lg border-2 text-left transition-all flex items-start gap-3 ${
+        selected
+          ? 'border-zinc-900 bg-zinc-50'
+          : 'border-zinc-200 hover:border-zinc-300 bg-white'
+      }`}
+    >
+      <div className={`mt-0.5 ${selected ? 'text-zinc-900' : 'text-zinc-400'}`}>
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-sm text-zinc-900">{title}</p>
+        <p className="text-xs text-zinc-500 mt-0.5">{description}</p>
+      </div>
+      {selected && (
+        <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-zinc-900 flex items-center justify-center">
+          <Check className="h-3 w-3 text-white" />
+        </div>
+      )}
+    </button>
+  );
+}
+
+/* ---------- env var row helpers ---------- */
+
+interface EnvEntry {
+  key: string;
+  value: string;
+}
+
+function parseEnvString(s: string): EnvEntry[] {
+  if (!s?.trim()) return [];
+  return s
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'))
+    .map((line) => {
+      const eq = line.indexOf('=');
+      if (eq <= 0) return null;
+      return { key: line.slice(0, eq).trim(), value: line.slice(eq + 1).trim() };
+    })
+    .filter(Boolean) as EnvEntry[];
+}
+
+/* ---------- main page ---------- */
 
 export default function NewWorkloadPage() {
   const router = useRouter();
   const params = useParams();
   const projectId = params.id as string;
   const [sourceType, setSourceType] = useState<SourceType>('image');
+  const [buildMethod, setBuildMethod] = useState<BuildMethod>('dockerfile');
   const [deployed, setDeployed] = useState(false);
-  const [ingressEnabled, setIngressEnabled] = useState(false);
-  const [ingressHost, setIngressHost] = useState('');
+  const [showIngress, setShowIngress] = useState(false);
+  const [showEnvVars, setShowEnvVars] = useState(false);
+  const [showBuildSettings, setShowBuildSettings] = useState(false);
 
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
@@ -86,8 +189,10 @@ export default function NewWorkloadPage() {
       gitRepo: '',
       gitBranch: 'main',
       dockerfilePath: 'Dockerfile',
+      buildContext: './',
       replicas: 1,
       port: 80,
+      ingressHost: '',
       envVars: '',
     },
   });
@@ -104,40 +209,39 @@ export default function NewWorkloadPage() {
       return;
     }
 
-    // Parse env vars
-    const envMap: Record<string, string> = {};
-    if (data.envVars?.trim()) {
-      data.envVars.split('\n').forEach(line => {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) return;
-        const eqIndex = trimmed.indexOf('=');
-        if (eqIndex > 0) {
-          envMap[trimmed.slice(0, eqIndex).trim()] = trimmed.slice(eqIndex + 1).trim();
-        }
-      });
-    }
-
-    // Build env array from parsed map
-    const envArray = Object.entries(envMap).map(([name, value]) => ({ name, value }));
+    const envEntries = parseEnvString(data.envVars ?? '');
+    const envArray = envEntries.map(({ key, value }) => ({ name: key, value }));
 
     try {
-      const workload = await workloadsApi.create({
+      await workloadsApi.create({
         project_id: projectId,
         name: data.name,
-        image: sourceType === 'image'
-          ? `${data.image}${data.imageTag ? ':' + data.imageTag : ''}`
-          : undefined,
+        image:
+          sourceType === 'image'
+            ? `${data.image}${data.imageTag ? ':' + data.imageTag : ''}`
+            : undefined,
         git_source: sourceType === 'git' ? data.gitRepo : undefined,
+        build_config:
+          sourceType === 'git'
+            ? {
+                method: buildMethod,
+                dockerfile: buildMethod === 'dockerfile' ? data.dockerfilePath : undefined,
+                context: data.buildContext || './',
+              }
+            : undefined,
         replicas: data.replicas,
         port: data.port ?? undefined,
         env: envArray.length > 0 ? envArray : undefined,
-        ingress: ingressEnabled && ingressHost ? {
-          enabled: true,
-          host: ingressHost,
-          path: '/',
-          tls_secret: null,
-          annotations: null,
-        } : undefined,
+        ingress:
+          showIngress && data.ingressHost
+            ? {
+                enabled: true,
+                host: data.ingressHost,
+                path: '/',
+                tls_secret: null,
+                annotations: null,
+              }
+            : undefined,
       });
 
       setDeployed(true);
@@ -151,9 +255,10 @@ export default function NewWorkloadPage() {
     }
   };
 
+  /* success state */
   if (deployed) {
     return (
-      <div className="px-8 py-8 max-w-2xl flex items-center justify-center min-h-[60vh]">
+      <div className="px-8 py-8 max-w-3xl mx-auto flex items-center justify-center min-h-[60vh]">
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -165,7 +270,8 @@ export default function NewWorkloadPage() {
           </div>
           <h2 className="text-2xl font-bold text-zinc-900">Workload Deployed</h2>
           <p className="text-zinc-500">
-            <span className="font-mono text-zinc-700">{workloadName}</span> is being deployed to your cluster.
+            <span className="font-mono text-zinc-700">{workloadName}</span> is being
+            deployed to your cluster.
           </p>
         </motion.div>
       </div>
@@ -173,7 +279,7 @@ export default function NewWorkloadPage() {
   }
 
   return (
-    <div className="px-8 py-8 max-w-2xl space-y-6">
+    <div className="px-8 py-8 max-w-3xl mx-auto space-y-6">
       {/* Breadcrumb */}
       <motion.div
         variants={fadeInUp}
@@ -194,63 +300,39 @@ export default function NewWorkloadPage() {
         </Button>
       </motion.div>
 
-      {/* Header */}
+      {/* Header + source toggle */}
       <motion.div
         variants={fadeInUp}
         initial="initial"
         animate="animate"
         transition={{ duration: 0.4, delay: 0.05, ease: easeOutQuart }}
       >
-        <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Deploy Workload</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-zinc-900">
+          Deploy from {sourceType === 'image' ? 'Container Image' : 'Git Repository'}
+        </h1>
         <p className="text-sm text-zinc-500 mt-1">
-          Deploy from a container image or a Git repository
+          {sourceType === 'image' ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setSourceType('git')}
+                className="text-zinc-900 underline underline-offset-2 hover:text-zinc-600 transition-colors"
+              >
+                Deploy from Git repository instead →
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => setSourceType('image')}
+                className="text-zinc-900 underline underline-offset-2 hover:text-zinc-600 transition-colors"
+              >
+                Deploy from Container Registry instead →
+              </button>
+            </>
+          )}
         </p>
-      </motion.div>
-
-      {/* Source Type Selection */}
-      <motion.div
-        variants={fadeInUp}
-        initial="initial"
-        animate="animate"
-        transition={{ duration: 0.4, delay: 0.1, ease: easeOutQuart }}
-        className="grid grid-cols-2 gap-4"
-      >
-        <button
-          type="button"
-          onClick={() => setSourceType('image')}
-          className={`relative p-5 rounded-lg border-2 text-left transition-all ${
-            sourceType === 'image'
-              ? 'border-zinc-900 bg-zinc-50'
-              : 'border-zinc-200 hover:border-zinc-300 bg-white'
-          }`}
-        >
-          <Container className={`h-6 w-6 mb-2 ${sourceType === 'image' ? 'text-zinc-900' : 'text-zinc-400'}`} />
-          <p className="font-medium text-zinc-900">Container Image</p>
-          <p className="text-xs text-zinc-500 mt-1">Deploy from Docker Hub, GHCR, or any registry</p>
-          {sourceType === 'image' && (
-            <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-zinc-900 flex items-center justify-center">
-              <Check className="h-3 w-3 text-white" />
-            </div>
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={() => setSourceType('git')}
-          className={`relative p-5 rounded-lg border-2 text-left transition-all ${
-            sourceType === 'git'
-              ? 'border-zinc-900 bg-zinc-50'
-              : 'border-zinc-200 hover:border-zinc-300 bg-white'
-          }`}
-        >
-          <GitBranch className={`h-6 w-6 mb-2 ${sourceType === 'git' ? 'text-zinc-900' : 'text-zinc-400'}`} />
-          <p className="font-medium text-zinc-900">Git Repository</p>
-          <p className="text-xs text-zinc-500 mt-1">Build and deploy from source code</p>
-          {sourceType === 'git' && (
-            <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-zinc-900 flex items-center justify-center">
-              <Check className="h-3 w-3 text-white" />
-            </div>
-          )}
-        </button>
       </motion.div>
 
       {/* Form */}
@@ -258,225 +340,354 @@ export default function NewWorkloadPage() {
         variants={fadeInUp}
         initial="initial"
         animate="animate"
-        transition={{ duration: 0.4, delay: 0.15, ease: easeOutQuart }}
+        transition={{ duration: 0.4, delay: 0.1, ease: easeOutQuart }}
       >
-        <Card className="border-zinc-200">
-          <CardHeader>
-            <CardTitle>
-              {sourceType === 'image' ? 'Image Configuration' : 'Repository Configuration'}
-            </CardTitle>
-            <CardDescription>
-              {sourceType === 'image'
-                ? 'Specify the container image to deploy'
-                : 'Point to your Git repository and we\'ll build it'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-              {/* Name */}
-              <div className="space-y-2">
-                <Label htmlFor="name">
-                  Workload Name <span className="text-destructive">*</span>
-                </Label>
+        <form onSubmit={handleSubmit(onSubmit)}>
+          <div className="rounded-lg border border-zinc-200 bg-white">
+            {/* ---- Name ---- */}
+            <div className="px-6">
+              <FormRow
+                label="Name"
+                description="A unique name for your workload. Only lowercase letters, numbers, and hyphens."
+                required
+              >
                 <Input
-                  id="name"
                   placeholder="my-app"
                   {...register('name')}
                   disabled={isSubmitting}
                 />
                 {errors.name && (
-                  <p className="text-sm text-destructive">{errors.name.message}</p>
+                  <p className="text-sm text-destructive mt-1">{errors.name.message}</p>
                 )}
-              </div>
+              </FormRow>
+            </div>
 
-              {/* Container Image Source */}
-              {sourceType === 'image' && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="image">
-                      Image <span className="text-destructive">*</span>
-                    </Label>
-                    <div className="flex gap-3">
-                      <div className="flex-1">
-                        <Input
-                          id="image"
-                          placeholder="nginx"
-                          {...register('image')}
-                          disabled={isSubmitting}
-                        />
-                      </div>
-                      <div className="w-32">
-                        <Input
-                          id="imageTag"
-                          placeholder="latest"
-                          {...register('imageTag')}
-                          disabled={isSubmitting}
-                        />
-                      </div>
-                    </div>
-                    {errors.image && (
-                      <p className="text-sm text-destructive">{errors.image.message}</p>
-                    )}
-                    <p className="text-xs text-muted-foreground">
-                      e.g. nginx, ghcr.io/org/app, or registry.example.com/image
-                    </p>
-                  </div>
-                </>
-              )}
+            <SectionDivider />
 
-              {/* Git Repo Source */}
-              {sourceType === 'git' && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="gitRepo">
-                      Repository URL <span className="text-destructive">*</span>
-                    </Label>
-                    <Input
-                      id="gitRepo"
-                      placeholder="https://github.com/org/repo"
-                      {...register('gitRepo')}
-                      disabled={isSubmitting}
-                    />
-                    {errors.gitRepo && (
-                      <p className="text-sm text-destructive">{errors.gitRepo.message}</p>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="gitBranch">Branch</Label>
+            {/* ---- Source-specific fields ---- */}
+            <div className="px-6">
+              <AnimatePresence mode="wait">
+                {sourceType === 'image' ? (
+                  <motion.div
+                    key="image-fields"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <FormRow
+                      label="Container Image"
+                      description="The image to deploy. Supports Docker Hub, GHCR, or any registry."
+                      required
+                    >
+                      <div className="flex gap-3">
+                        <div className="flex-1">
+                          <Input
+                            placeholder="nginx"
+                            {...register('image')}
+                            disabled={isSubmitting}
+                          />
+                        </div>
+                        <div className="w-28">
+                          <Input
+                            placeholder="latest"
+                            {...register('imageTag')}
+                            disabled={isSubmitting}
+                          />
+                        </div>
+                      </div>
+                      {errors.image && (
+                        <p className="text-sm text-destructive mt-1">
+                          {errors.image.message}
+                        </p>
+                      )}
+                      <p className="text-xs text-zinc-400 mt-1.5">
+                        e.g. nginx, ghcr.io/org/app, registry.example.com/image
+                      </p>
+                    </FormRow>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="git-fields"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <FormRow
+                      label="Repository URL"
+                      description="HTTPS URL of your Git repository."
+                      required
+                    >
                       <Input
-                        id="gitBranch"
+                        placeholder="https://github.com/org/repo"
+                        {...register('gitRepo')}
+                        disabled={isSubmitting}
+                      />
+                      {errors.gitRepo && (
+                        <p className="text-sm text-destructive mt-1">
+                          {errors.gitRepo.message}
+                        </p>
+                      )}
+                    </FormRow>
+
+                    <SectionDivider />
+
+                    <FormRow label="Branch" description="The branch to build and deploy from.">
+                      <Input
                         placeholder="main"
                         {...register('gitBranch')}
                         disabled={isSubmitting}
                       />
+                    </FormRow>
+
+                    <SectionDivider />
+
+                    <FormRow
+                      label="Build Method"
+                      description="How to build your application into a container image."
+                    >
+                      <div className="grid grid-cols-2 gap-3">
+                        <OptionCard
+                          selected={buildMethod === 'dockerfile'}
+                          onClick={() => setBuildMethod('dockerfile')}
+                          icon={<FileCode className="h-5 w-5" />}
+                          title="Dockerfile"
+                          description="Build using a Dockerfile. Full control over the build process."
+                        />
+                        <OptionCard
+                          selected={buildMethod === 'buildpacks'}
+                          onClick={() => setBuildMethod('buildpacks')}
+                          icon={<Layers className="h-5 w-5" />}
+                          title="Buildpacks"
+                          description="Auto-detect and build. No Dockerfile needed."
+                        />
+                      </div>
+                    </FormRow>
+
+                    {/* Conditional: Dockerfile path */}
+                    <AnimatePresence>
+                      {buildMethod === 'dockerfile' && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <SectionDivider />
+                          <FormRow
+                            label="Dockerfile Path"
+                            description="Path to the Dockerfile relative to the build context."
+                          >
+                            <Input
+                              placeholder="Dockerfile"
+                              {...register('dockerfilePath')}
+                              disabled={isSubmitting}
+                            />
+                          </FormRow>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Build settings expander */}
+                    <div className="py-3">
+                      <button
+                        type="button"
+                        onClick={() => setShowBuildSettings(!showBuildSettings)}
+                        className="text-sm text-zinc-500 hover:text-zinc-900 flex items-center gap-1.5 transition-colors"
+                      >
+                        <ChevronDown
+                          className={`h-4 w-4 transition-transform ${
+                            showBuildSettings ? 'rotate-180' : ''
+                          }`}
+                        />
+                        Build settings
+                      </button>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="dockerfilePath">Dockerfile Path</Label>
+                    <AnimatePresence>
+                      {showBuildSettings && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <FormRow
+                            label="Build Context"
+                            description="The directory to run the build in. Defaults to the repository root."
+                          >
+                            <Input
+                              placeholder="./"
+                              {...register('buildContext')}
+                              disabled={isSubmitting}
+                            />
+                          </FormRow>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <SectionDivider />
+
+            {/* ---- Deployment Settings ---- */}
+            <div className="px-6">
+              <FormRow label="Replicas" description="Number of instances to run.">
+                <Input
+                  type="number"
+                  min={WORKLOAD_LIMITS.MIN_REPLICAS}
+                  max={WORKLOAD_LIMITS.MAX_REPLICAS}
+                  className="w-24"
+                  {...register('replicas', { valueAsNumber: true })}
+                  disabled={isSubmitting}
+                />
+                {errors.replicas && (
+                  <p className="text-sm text-destructive mt-1">
+                    {errors.replicas.message}
+                  </p>
+                )}
+              </FormRow>
+
+              <SectionDivider />
+
+              <FormRow
+                label="Port"
+                description="The port your application listens on. Leave empty if not applicable."
+              >
+                <Input
+                  type="number"
+                  placeholder="80"
+                  className="w-24"
+                  {...register('port', {
+                    setValueAs: (v) =>
+                      v === '' || v === null || v === undefined ? undefined : Number(v),
+                  })}
+                  disabled={isSubmitting}
+                />
+                {errors.port && (
+                  <p className="text-sm text-destructive mt-1">{errors.port.message}</p>
+                )}
+              </FormRow>
+            </div>
+
+            <SectionDivider />
+
+            {/* ---- Ingress (progressive disclosure) ---- */}
+            <div className="px-6">
+              {!showIngress ? (
+                <div className="py-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowIngress(true)}
+                    className="text-sm text-zinc-500 hover:text-zinc-900 flex items-center gap-1.5 transition-colors"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add custom domain
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowIngress(false)}
+                    className="absolute top-5 right-0 text-zinc-400 hover:text-zinc-600 transition-colors"
+                    title="Remove domain"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                  <FormRow
+                    label="Domain"
+                    description="Route traffic to this workload via a custom hostname. TLS is managed automatically by cert-manager."
+                  >
+                    <div className="flex items-center gap-2">
+                      <Globe className="h-4 w-4 text-zinc-400 shrink-0" />
                       <Input
-                        id="dockerfilePath"
-                        placeholder="Dockerfile"
-                        {...register('dockerfilePath')}
+                        placeholder="app.example.com"
+                        {...register('ingressHost')}
                         disabled={isSubmitting}
                       />
                     </div>
-                  </div>
-                </>
-              )}
-
-              {/* Divider */}
-              <div className="border-t border-zinc-100" />
-
-              {/* Deployment Settings */}
-              <div>
-                <p className="text-sm font-medium text-zinc-900 mb-4">Deployment Settings</p>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="replicas">Replicas</Label>
-                    <Input
-                      id="replicas"
-                      type="number"
-                      min={WORKLOAD_LIMITS.MIN_REPLICAS}
-                      max={WORKLOAD_LIMITS.MAX_REPLICAS}
-                      {...register('replicas', { valueAsNumber: true })}
-                      disabled={isSubmitting}
-                    />
-                    {errors.replicas && (
-                      <p className="text-sm text-destructive">{errors.replicas.message}</p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="port">Port</Label>
-                    <Input
-                      id="port"
-                      type="number"
-                      placeholder="80"
-                      {...register('port', {
-                        setValueAs: (v) => (v === '' || v === null || v === undefined) ? undefined : Number(v)
-                      })}
-                      disabled={isSubmitting}
-                    />
-                    {errors.port && (
-                      <p className="text-sm text-destructive">{errors.port.message}</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Ingress */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    id="ingressEnabled"
-                    checked={ingressEnabled}
-                    onChange={(e) => setIngressEnabled(e.target.checked)}
-                    disabled={isSubmitting}
-                    className="h-4 w-4 rounded border-zinc-300"
-                  />
-                  <Label htmlFor="ingressEnabled" className="cursor-pointer">
-                    Expose via Ingress
-                  </Label>
-                </div>
-                {ingressEnabled && (
-                  <div className="space-y-2 pl-7">
-                    <Label htmlFor="ingressHost">Hostname</Label>
-                    <Input
-                      id="ingressHost"
-                      placeholder="app.example.com"
-                      value={ingressHost}
-                      onChange={(e) => setIngressHost(e.target.value)}
-                      disabled={isSubmitting}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      The domain name to route traffic to this workload
+                    <p className="text-xs text-zinc-400 mt-1.5 flex items-center gap-1">
+                      <Check className="h-3 w-3 text-emerald-500" />
+                      TLS auto-managed by cert-manager
                     </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Environment Variables */}
-              <div className="space-y-2">
-                <Label htmlFor="envVars">
-                  Environment Variables <span className="text-xs text-muted-foreground font-normal">(optional)</span>
-                </Label>
-                <Textarea
-                  id="envVars"
-                  placeholder={"NODE_ENV=production\nDATABASE_URL=postgres://...\nAPI_KEY=sk-..."}
-                  rows={4}
-                  className="font-mono text-xs"
-                  {...register('envVars')}
-                  disabled={isSubmitting}
-                />
-                <p className="text-xs text-muted-foreground">
-                  One per line, KEY=VALUE format. Lines starting with # are ignored.
-                </p>
-              </div>
-
-              {/* Error */}
-              {errors.root && (
-                <div className="rounded-lg bg-red-50 border border-red-200 p-4">
-                  <p className="text-sm text-destructive">{errors.root.message}</p>
+                  </FormRow>
                 </div>
               )}
+            </div>
 
-              {/* Actions */}
-              <div className="flex gap-3 justify-end pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => router.push(`/projects/${projectId}`)}
-                  disabled={isSubmitting}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? 'Deploying...' : 'Deploy'}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+            <SectionDivider />
+
+            {/* ---- Environment Variables (progressive disclosure) ---- */}
+            <div className="px-6">
+              {!showEnvVars ? (
+                <div className="py-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowEnvVars(true)}
+                    className="text-sm text-zinc-500 hover:text-zinc-900 flex items-center gap-1.5 transition-colors"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add environment variables
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowEnvVars(false)}
+                    className="absolute top-5 right-0 text-zinc-400 hover:text-zinc-600 transition-colors"
+                    title="Remove environment variables"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                  <FormRow
+                    label="Environment Variables"
+                    description="One per line, KEY=VALUE format. Lines starting with # are ignored."
+                  >
+                    <textarea
+                      placeholder={"NODE_ENV=production\nDATABASE_URL=postgres://...\nAPI_KEY=sk-..."}
+                      rows={5}
+                      className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono text-xs leading-relaxed"
+                      {...register('envVars')}
+                      disabled={isSubmitting}
+                    />
+                  </FormRow>
+                </div>
+              )}
+            </div>
+
+            {/* ---- Error ---- */}
+            {errors.root && (
+              <>
+                <SectionDivider />
+                <div className="px-6 py-4">
+                  <div className="rounded-lg bg-red-50 border border-red-200 p-4">
+                    <p className="text-sm text-destructive">{errors.root.message}</p>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* ---- Actions ---- */}
+            <SectionDivider />
+            <div className="px-6 py-4 flex gap-3 justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => router.push(`/projects/${projectId}`)}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? 'Deploying...' : 'Deploy'}
+              </Button>
+            </div>
+          </div>
+        </form>
       </motion.div>
     </div>
   );
