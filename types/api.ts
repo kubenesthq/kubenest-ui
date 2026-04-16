@@ -228,6 +228,13 @@ export interface ApiError {
 export type AddonType = 'postgres' | 'redis' | 'kafka' | 'mongodb' | 'mysql' | 'rabbitmq' | 'custom';
 export type AddonPhase = 'Pending' | 'Deploying' | 'Running' | 'Degraded' | 'Failed';
 
+export interface ExportSchemaEntry {
+  description: string;
+  example?: string;
+  default?: string;
+  secret?: boolean;
+}
+
 export interface AddonDefinition {
   id: string;
   cluster_id: string | null;
@@ -239,6 +246,8 @@ export interface AddonDefinition {
   type: AddonType;
   chart_config: ChartSpec | null;
   default_values: Record<string, unknown> | null;
+  exposed_values: Record<string, unknown> | null;
+  export_schema: Record<string, ExportSchemaEntry> | null;
   is_active: boolean;
   created_at: string;
   updated_at: string | null;
@@ -364,6 +373,65 @@ export interface ProvisioningJob {
   terraform_state_key: string | null;
   started_at: string | null;
   completed_at: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+// App (StackDeploy) types
+export type AppPhase = 'Pending' | 'Deploying' | 'Running' | 'Degraded' | 'Failed';
+
+export interface AppEnvVar {
+  name: string;
+  value?: string;
+  export_ref?: {
+    component: string;
+    export_key: string;
+  };
+}
+
+export interface WorkloadSpec {
+  image: string;
+  replicas?: number;
+  port?: number | null;
+  env?: AppEnvVar[];
+  ingress?: {
+    enabled: boolean;
+    host: string;
+    path: string;
+  };
+}
+
+export interface AddonSpec {
+  type: AddonType;
+  chart: ChartSpec;
+  values?: Record<string, unknown>;
+  timeout?: string;
+}
+
+export type AppComponentType = 'workload' | 'addon';
+
+export interface AppComponent {
+  name: string;
+  type: AppComponentType;
+  depends_on?: string[];
+  workload_spec?: WorkloadSpec;
+  addon_spec?: AddonSpec;
+}
+
+export interface AppCreate {
+  name: string;
+  project_id: string;
+  components: AppComponent[];
+  timeout?: string;
+}
+
+export interface AppRead {
+  uid: string;
+  name: string;
+  namespace: string;
+  phase: AppPhase;
+  components: AppComponent[];
+  project_id: string;
   created_at: string;
   updated_at: string | null;
 }
