@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { Suspense, useState, useCallback, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -834,6 +834,14 @@ function genId() {
 }
 
 export default function NewAppPage() {
+  return (
+    <Suspense fallback={<div className="px-8 py-8 text-sm text-zinc-500">Loading…</div>}>
+      <NewAppPageInner />
+    </Suspense>
+  );
+}
+
+function NewAppPageInner() {
   const router = useRouter();
   const search = useSearchParams();
   const createApp = useCreateApp();

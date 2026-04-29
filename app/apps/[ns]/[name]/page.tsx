@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { format } from 'date-fns';
@@ -90,6 +90,20 @@ function PhaseBadge({ phase }: { phase: string }) {
 }
 
 export default function AppDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center py-32">
+          <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+        </div>
+      }
+    >
+      <AppDetailPageInner />
+    </Suspense>
+  );
+}
+
+function AppDetailPageInner() {
   const params = useParams();
   const search = useSearchParams();
   const router = useRouter();
