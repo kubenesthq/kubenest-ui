@@ -1,0 +1,72 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - img [ref=e6]
+        - generic [ref=e9]: KubeNest
+      - combobox [ref=e11] [cursor=pointer]:
+        - generic [ref=e12]:
+          - img [ref=e13]
+          - generic: Default
+        - img [ref=e17]
+      - navigation [ref=e19]:
+        - link "Dashboard" [ref=e20] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e21]
+          - text: Dashboard
+        - link "Apps" [ref=e26] [cursor=pointer]:
+          - /url: /apps
+          - img [ref=e27]
+          - text: Apps
+        - paragraph [ref=e32]: Actions
+        - link "Register Cluster" [ref=e33] [cursor=pointer]:
+          - /url: /clusters/new
+          - img [ref=e34]
+          - text: Register Cluster
+        - paragraph [ref=e36]: Admin
+        - link "Addon Catalog" [ref=e37] [cursor=pointer]:
+          - /url: /admin/addon-definitions
+          - img [ref=e38]
+          - text: Addon Catalog
+        - paragraph [ref=e43]: Settings
+        - link "Stack Templates" [ref=e44] [cursor=pointer]:
+          - /url: /settings/stack-templates
+          - img [ref=e45]
+          - text: Stack Templates
+        - link "Teams" [ref=e51] [cursor=pointer]:
+          - /url: /settings/teams
+          - img [ref=e52]
+          - text: Teams
+        - link "Access Control" [ref=e57] [cursor=pointer]:
+          - /url: /settings/rbac
+          - img [ref=e58]
+          - text: Access Control
+        - link "SSO" [ref=e60] [cursor=pointer]:
+          - /url: /settings/sso
+          - img [ref=e61]
+          - text: SSO
+        - link "Settings" [ref=e65] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e66]
+          - text: Settings
+      - generic [ref=e69]:
+        - generic [ref=e70]:
+          - generic [ref=e71]: A
+          - generic [ref=e72]:
+            - paragraph [ref=e73]: admin
+            - paragraph [ref=e74]: lakshmi@lakshminp.com
+        - button "Sign out" [ref=e75] [cursor=pointer]:
+          - img [ref=e76]
+          - text: Sign out
+    - main [ref=e79]:
+      - generic [ref=e81]:
+        - img [ref=e303]
+        - heading "App Deployed" [level=2] [ref=e305]
+        - paragraph [ref=e306]: demo-app is being deployed with 2 components.
+  - region "Notifications (F8)":
+    - list
+  - button "Open Next.js Dev Tools" [ref=e122] [cursor=pointer]:
+    - img [ref=e123]
+  - alert [ref=e126]
+  - region "Notifications (F8)":
+    - list

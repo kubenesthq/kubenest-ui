@@ -12,7 +12,7 @@ const mainNav = [
     label: 'Dashboard',
     href: '/dashboard',
     icon: LayoutDashboard,
-    matchPaths: ['/dashboard', '/clusters', '/projects', '/workloads', '/demo-workloads'],
+    matchPaths: ['/dashboard', '/clusters', '/projects'],
   },
   {
     label: 'Apps',

@@ -1,0 +1,172 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - img [ref=e6]
+        - generic [ref=e9]: KubeNest
+      - combobox [ref=e125] [cursor=pointer]:
+        - generic [ref=e126]:
+          - img [ref=e127]
+          - generic: Default
+        - img [ref=e131]
+      - navigation [ref=e17]:
+        - link "Dashboard" [ref=e18] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e19]
+          - text: Dashboard
+        - link "Apps" [ref=e24] [cursor=pointer]:
+          - /url: /apps
+          - img [ref=e25]
+          - text: Apps
+        - paragraph [ref=e30]: Actions
+        - link "Register Cluster" [ref=e31] [cursor=pointer]:
+          - /url: /clusters/new
+          - img [ref=e32]
+          - text: Register Cluster
+        - paragraph [ref=e34]: Admin
+        - link "Addon Catalog" [ref=e35] [cursor=pointer]:
+          - /url: /admin/addon-definitions
+          - img [ref=e36]
+          - text: Addon Catalog
+        - paragraph [ref=e41]: Settings
+        - link "Stack Templates" [ref=e42] [cursor=pointer]:
+          - /url: /settings/stack-templates
+          - img [ref=e43]
+          - text: Stack Templates
+        - link "Teams" [ref=e49] [cursor=pointer]:
+          - /url: /settings/teams
+          - img [ref=e50]
+          - text: Teams
+        - link "Access Control" [ref=e55] [cursor=pointer]:
+          - /url: /settings/rbac
+          - img [ref=e56]
+          - text: Access Control
+        - link "SSO" [ref=e58] [cursor=pointer]:
+          - /url: /settings/sso
+          - img [ref=e59]
+          - text: SSO
+        - link "Settings" [ref=e63] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e64]
+          - text: Settings
+      - generic [ref=e67]:
+        - generic [ref=e68]:
+          - generic [ref=e69]: A
+          - generic [ref=e70]:
+            - paragraph [ref=e71]: admin
+            - paragraph [ref=e72]: lakshmi@lakshminp.com
+        - button "Sign out" [ref=e73] [cursor=pointer]:
+          - img [ref=e74]
+          - text: Sign out
+    - main [ref=e77]:
+      - generic [ref=e78]:
+        - link "Apps" [ref=e80] [cursor=pointer]:
+          - /url: /apps
+          - img [ref=e81]
+          - text: Apps
+        - generic [ref=e83]:
+          - heading "Create App" [level=1] [ref=e84]
+          - paragraph [ref=e85]: Define your app with workloads and addons. Everything deploys together.
+        - generic [ref=e87]:
+          - generic [ref=e89]:
+            - generic [ref=e90]:
+              - paragraph [ref=e91]: App Name*
+              - paragraph [ref=e92]: A unique name for your app. Lowercase letters, numbers, and hyphens only.
+            - textbox "my-app" [ref=e94]
+          - generic [ref=e97]:
+            - generic [ref=e98]:
+              - paragraph [ref=e99]: Project*
+              - paragraph [ref=e100]: The project this app belongs to. Determines the cluster and namespace.
+            - combobox [ref=e102]:
+              - option "Select a project..."
+              - option "test (test)" [selected]
+          - generic [ref=e104]:
+            - generic [ref=e105]:
+              - paragraph [ref=e106]: Components
+              - paragraph [ref=e107]: Add workloads (web services, workers) and addons (databases, caches) that make up your app.
+            - generic [ref=e153]:
+              - generic [ref=e154]:
+                - generic [ref=e155]:
+                  - img [ref=e157]
+                  - generic [ref=e160]:
+                    - paragraph [ref=e161]: Unnamed workload
+                    - paragraph [ref=e162]: Web Service
+                  - button [ref=e163] [cursor=pointer]:
+                    - img [ref=e164]
+                  - button [ref=e166] [cursor=pointer]:
+                    - img [ref=e167]
+                - generic [ref=e171]:
+                  - generic [ref=e172]:
+                    - generic [ref=e173]: Component Name *
+                    - textbox "api" [ref=e174]
+                  - generic [ref=e175]:
+                    - generic [ref=e176]: Type
+                    - generic [ref=e177]:
+                      - button "Web Service" [ref=e178] [cursor=pointer]
+                      - button "Worker" [ref=e179] [cursor=pointer]
+                  - generic [ref=e180]:
+                    - generic [ref=e181]: Image *
+                    - textbox "myapp:latest" [ref=e182]
+                  - generic [ref=e183]:
+                    - generic [ref=e184]:
+                      - generic [ref=e185]: Port
+                      - spinbutton [ref=e186]: "8080"
+                    - generic [ref=e187]:
+                      - generic [ref=e188]: Replicas
+                      - spinbutton [ref=e189]: "1"
+                  - button "Add custom domain" [ref=e191] [cursor=pointer]:
+                    - img [ref=e192]
+                    - text: Add custom domain
+                  - generic [ref=e193]:
+                    - generic [ref=e194]:
+                      - generic [ref=e195]: Environment Variables
+                      - button "Add" [ref=e196] [cursor=pointer]:
+                        - img [ref=e197]
+                        - text: Add
+                    - generic [ref=e299]:
+                      - textbox "KEY" [ref=e301]: REDIS_URL
+                      - generic [ref=e330]:
+                        - img [ref=e331]
+                        - generic [ref=e334]: redis.REDIS_URL
+                        - button [ref=e335] [cursor=pointer]:
+                          - img [ref=e336]
+                      - button [ref=e309] [cursor=pointer]:
+                        - img [ref=e310]
+              - generic [ref=e265]:
+                - generic [ref=e266]:
+                  - img [ref=e268]
+                  - generic [ref=e272]:
+                    - paragraph [ref=e273]: redis
+                    - paragraph [ref=e274]: Redis
+                  - button [ref=e275] [cursor=pointer]:
+                    - img [ref=e276]
+                  - button [ref=e278] [cursor=pointer]:
+                    - img [ref=e279]
+                - generic [ref=e283]:
+                  - generic [ref=e284]:
+                    - generic [ref=e285]: Component Name *
+                    - textbox "cache" [ref=e286]: redis
+                  - generic [ref=e287]:
+                    - paragraph [ref=e288]: Redis
+                    - paragraph [ref=e289]: In-memory data structure store
+                    - paragraph [ref=e290]: redis:17.0.0
+                  - generic [ref=e291]:
+                    - paragraph [ref=e292]: Exports available to workloads
+                    - generic [ref=e293]:
+                      - generic [ref=e294]: REDIS_URL
+                      - generic [ref=e295]: REDIS_HOST
+                      - generic [ref=e296]: REDIS_PORT
+                      - generic [ref=e297]: REDIS_PASSWORD
+            - button "Add Component" [ref=e109] [cursor=pointer]:
+              - img [ref=e110]
+              - text: Add Component
+          - generic [ref=e112]:
+            - button "Cancel" [ref=e113] [cursor=pointer]
+            - button "Deploy" [ref=e114] [cursor=pointer]
+  - region "Notifications (F8)":
+    - list
+  - button "Open Next.js Dev Tools" [ref=e120] [cursor=pointer]:
+    - img [ref=e121]
+  - alert [ref=e124]
+  - region "Notifications (F8)":
+    - list

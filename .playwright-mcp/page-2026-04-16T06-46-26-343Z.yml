@@ -1,0 +1,117 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e50]:
+    - complementary [ref=e51]:
+      - generic [ref=e52]:
+        - img [ref=e54]
+        - generic [ref=e57]: KubeNest
+      - combobox [ref=e59] [cursor=pointer]:
+        - generic [ref=e60]:
+          - img [ref=e61]
+          - generic: Default
+        - img [ref=e65]
+      - navigation [ref=e67]:
+        - link "Dashboard" [ref=e68] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e69]
+          - text: Dashboard
+        - link "Apps" [ref=e74] [cursor=pointer]:
+          - /url: /apps
+          - img [ref=e75]
+          - text: Apps
+        - paragraph [ref=e80]: Actions
+        - link "Register Cluster" [ref=e81] [cursor=pointer]:
+          - /url: /clusters/new
+          - img [ref=e82]
+          - text: Register Cluster
+        - paragraph [ref=e84]: Admin
+        - link "Addon Catalog" [ref=e85] [cursor=pointer]:
+          - /url: /admin/addon-definitions
+          - img [ref=e86]
+          - text: Addon Catalog
+        - paragraph [ref=e91]: Settings
+        - link "Stack Templates" [ref=e92] [cursor=pointer]:
+          - /url: /settings/stack-templates
+          - img [ref=e93]
+          - text: Stack Templates
+        - link "Teams" [ref=e99] [cursor=pointer]:
+          - /url: /settings/teams
+          - img [ref=e100]
+          - text: Teams
+        - link "Access Control" [ref=e105] [cursor=pointer]:
+          - /url: /settings/rbac
+          - img [ref=e106]
+          - text: Access Control
+        - link "SSO" [ref=e108] [cursor=pointer]:
+          - /url: /settings/sso
+          - img [ref=e109]
+          - text: SSO
+        - link "Settings" [ref=e113] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e114]
+          - text: Settings
+      - generic [ref=e117]:
+        - generic [ref=e118]:
+          - generic [ref=e119]: A
+          - generic [ref=e120]:
+            - paragraph [ref=e121]: admin
+            - paragraph [ref=e122]: lakshmi@lakshminp.com
+        - button "Sign out" [ref=e123] [cursor=pointer]:
+          - img [ref=e124]
+          - text: Sign out
+    - main [ref=e127]:
+      - generic [ref=e128]:
+        - generic [ref=e129]:
+          - generic [ref=e130]:
+            - heading "Dashboard" [level=1] [ref=e131]
+            - paragraph [ref=e132]: Kubernetes infrastructure overview
+          - button "Register Cluster" [ref=e133] [cursor=pointer]:
+            - img [ref=e134]
+            - text: Register Cluster
+        - generic [ref=e135]:
+          - generic [ref=e139]:
+            - generic [ref=e140]:
+              - paragraph [ref=e141]: Clusters
+              - paragraph [ref=e142]: "1"
+              - paragraph [ref=e143]: 1 of 1 connected
+            - img [ref=e145]
+          - generic [ref=e151]:
+            - generic [ref=e152]:
+              - paragraph [ref=e153]: Total Nodes
+              - paragraph [ref=e154]: "0"
+              - paragraph [ref=e155]: Across all clusters
+            - img [ref=e157]
+          - generic [ref=e162]:
+            - generic [ref=e163]:
+              - paragraph [ref=e164]: Needs Attention
+              - paragraph [ref=e165]: "0"
+              - paragraph [ref=e166]: All clusters healthy
+            - img [ref=e168]
+        - generic [ref=e173]:
+          - generic [ref=e176]:
+            - heading "Your Clusters" [level=3] [ref=e177]
+            - paragraph [ref=e178]: Click a cluster to view details and manage projects
+          - table [ref=e182]:
+            - rowgroup [ref=e183]:
+              - row "Name Description Status Connection Nodes Version" [ref=e184]:
+                - columnheader "Name" [ref=e185]
+                - columnheader "Description" [ref=e186]
+                - columnheader "Status" [ref=e187]
+                - columnheader "Connection" [ref=e188]
+                - columnheader "Nodes" [ref=e189]
+                - columnheader "Version" [ref=e190]
+            - rowgroup [ref=e191]:
+              - row "april-3-ss - connected Connected 0 -" [ref=e192] [cursor=pointer]:
+                - cell "april-3-ss" [ref=e193]
+                - cell "-" [ref=e194]
+                - cell "connected" [ref=e195]
+                - cell "Connected" [ref=e196]:
+                  - generic [ref=e197]: Connected
+                - cell "0" [ref=e199]
+                - cell "-" [ref=e200]
+  - region "Notifications (F8)":
+    - list
+  - button "Open Next.js Dev Tools" [ref=e44] [cursor=pointer]:
+    - img [ref=e45]
+  - alert [ref=e48]
+  - region "Notifications (F8)":
+    - list

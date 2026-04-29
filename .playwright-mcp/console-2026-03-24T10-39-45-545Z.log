@@ -1,0 +1,8 @@
+[    1826ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/favicon.ico:0
+[   20111ms] [WARNING] motion() is deprecated. Use motion.create() instead. @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_7a8122d0._.js:2287
+[   46365ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3000/api/v1/clusters:0
+[   46368ms] [ERROR] Failed to create cluster: Error: An error occurred
+    at fetchWithAuth (http://localhost:3000/_next/static/chunks/_429aca54._.js:584:15) @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_7a8122d0._.js:3117
+[   74289ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:3000/api/v1/clusters:0
+[   74290ms] [ERROR] Failed to create cluster: Error: An error occurred
+    at fetchWithAuth (http://localhost:3000/_next/static/chunks/_429aca54._.js:584:15) @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_7a8122d0._.js:3117

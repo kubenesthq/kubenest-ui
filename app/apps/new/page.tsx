@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
@@ -835,10 +835,13 @@ function genId() {
 
 export default function NewAppPage() {
   const router = useRouter();
+  const search = useSearchParams();
   const createApp = useCreateApp();
 
   const [appName, setAppName] = useState('');
-  const [selectedProjectId, setSelectedProjectId] = useState('');
+  const [selectedProjectId, setSelectedProjectId] = useState(
+    search.get('project_id') ?? '',
+  );
   const [components, setComponents] = useState<ComponentEntry[]>([]);
   const [deployed, setDeployed] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -850,6 +853,13 @@ export default function NewAppPage() {
     queryFn: () => getAllProjects(),
   });
   const projects = projectsData?.data ?? [];
+
+  // Preselect project from query param once projects load.
+  useEffect(() => {
+    const fromUrl = search.get('project_id');
+    if (!fromUrl || selectedProjectId) return;
+    if (projects.some((p) => p.id === fromUrl)) setSelectedProjectId(fromUrl);
+  }, [projects, search, selectedProjectId]);
 
   const { data: addonDefsData } = useQuery({
     queryKey: ['addon-definitions'],

@@ -12,8 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ProjectStatusBadge } from '@/components/projects/ProjectStatusBadge';
-import { WorkloadList } from '@/components/workloads/WorkloadList';
 import { AddonInstanceList } from '@/components/addons/AddonInstanceList';
+import { useApps } from '@/hooks/useApps';
 import {
   Dialog,
   DialogContent,
@@ -221,7 +221,7 @@ export default function ProjectDetailPage() {
             Add Registry
           </Button>
           <Button asChild size="sm">
-            <Link href={`/projects/${project.id}/workloads/new`}>Deploy Workload</Link>
+            <Link href={`/apps/new?project_id=${project.id}`}>Create App</Link>
           </Button>
           <Button
             variant="destructive"
@@ -233,7 +233,7 @@ export default function ProjectDetailPage() {
         </div>
       </motion.div>
 
-      {/* Workloads — primary content */}
+      {/* Apps — primary content */}
       <motion.div
         variants={fadeInUp}
         initial="initial"
@@ -244,18 +244,18 @@ export default function ProjectDetailPage() {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-base font-semibold text-zinc-900">Workloads</CardTitle>
+                <CardTitle className="text-base font-semibold text-zinc-900">Apps</CardTitle>
                 <p className="text-sm text-zinc-500 mt-0.5">
-                  Deployments running in this project
+                  StackDeploys running in this project
                 </p>
               </div>
               <Button asChild size="sm">
-                <Link href={`/projects/${project.id}/workloads/new`}>Deploy</Link>
+                <Link href={`/apps/new?project_id=${project.id}`}>Create</Link>
               </Button>
             </div>
           </CardHeader>
           <CardContent>
-            <WorkloadList projectId={project.id} />
+            <ProjectAppsList projectId={project.id} projectNamespace={project.namespace} />
           </CardContent>
         </Card>
       </motion.div>
@@ -415,6 +415,59 @@ export default function ProjectDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function ProjectAppsList({
+  projectId,
+  projectNamespace,
+}: {
+  projectId: string;
+  projectNamespace: string;
+}) {
+  const router = useRouter();
+  const appsQuery = useApps({ project_id: projectId });
+
+  if (appsQuery.isLoading) {
+    return <div className="py-6 text-sm text-zinc-400">Loading apps…</div>;
+  }
+  if (appsQuery.isError) {
+    return (
+      <div className="py-6 text-sm text-zinc-400">
+        Apps unavailable for this project.
+      </div>
+    );
+  }
+  const apps = appsQuery.data?.data ?? [];
+  if (apps.length === 0) {
+    return (
+      <div className="py-6 text-sm text-zinc-500">
+        No apps deployed in this project yet.
+      </div>
+    );
+  }
+  return (
+    <div className="divide-y divide-zinc-100">
+      {apps.map((a) => (
+        <button
+          key={`${a.namespace}/${a.name}`}
+          type="button"
+          onClick={() =>
+            router.push(`/apps/${a.namespace}/${a.name}?project_id=${projectId}`)
+          }
+          className="w-full flex items-center justify-between py-3 text-left hover:bg-zinc-50 px-2 -mx-2 rounded transition-colors"
+        >
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-zinc-900 truncate">{a.name}</p>
+            <p className="text-xs text-zinc-500">
+              {a.component_count} component{a.component_count === 1 ? '' : 's'}
+              {projectNamespace && ` · ${projectNamespace}`}
+            </p>
+          </div>
+          <span className="text-xs text-zinc-600">{a.phase}</span>
+        </button>
+      ))}
     </div>
   );
 }

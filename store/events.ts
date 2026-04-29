@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Workload, Project, Cluster } from '@/types/api';
+import type { Project, Cluster } from '@/types/api';
 
 // SSE Event types
 export type EventType =
@@ -36,7 +36,7 @@ export interface SSEEvent {
     error?: string;
     details?: Record<string, unknown>;
     // Resource-specific data
-    workload?: Partial<Workload>;
+    workload?: Record<string, unknown>;
     project?: Partial<Project>;
     cluster?: Partial<Cluster>;
   };

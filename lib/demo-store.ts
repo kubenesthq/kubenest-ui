@@ -1,51 +1,10 @@
 /**
- * Demo localStorage store for workloads, addon attachments, and stack templates.
+ * Demo localStorage store for clusters, projects, and deployed stacks.
  * Used for demo/presentation purposes — no backend calls.
+ *
+ * Workload-specific demo state was removed alongside the /workloads backend
+ * (9i2.9). Only cluster/project/deployed-stack scaffolding remains.
  */
-
-export interface DemoWorkload {
-  id: string;
-  project_id: string;
-  name: string;
-  source_type: 'image' | 'git';
-  image: string | null;
-  git_repo: string | null;
-  git_branch: string | null;
-  dockerfile_path: string | null;
-  replicas: number;
-  port: number | null;
-  env: Record<string, string>;
-  phase: 'pending' | 'building' | 'deploying' | 'running';
-  addons: DemoAddonAttachment[];
-  created_at: string;
-}
-
-export interface DemoAddonAttachment {
-  id: string;
-  addon_type: string;
-  addon_name: string;
-  config: Record<string, string>;
-  env_bindings: Record<string, string>; // e.g. { DATABASE_URL: "postgres://..." }
-  created_at: string;
-}
-
-export interface DemoStackTemplate {
-  id: string;
-  name: string;
-  description: string;
-  source_workload_id: string;
-  workload_config: Omit<DemoWorkload, 'id' | 'project_id' | 'phase' | 'created_at' | 'addons'>;
-  addons: Omit<DemoAddonAttachment, 'id' | 'created_at'>[];
-  variables: DemoStackVariable[];
-  created_at: string;
-}
-
-export interface DemoStackVariable {
-  key: string;
-  label: string;
-  default_value: string;
-  description: string;
-}
 
 export interface DemoDeployedStack {
   id: string;
@@ -84,8 +43,6 @@ export interface DemoProject {
 }
 
 const KEYS = {
-  workloads: 'demo_workloads',
-  templates: 'demo_stack_templates',
   stacks: 'demo_deployed_stacks',
   clusters: 'demo_clusters',
   projects: 'demo_projects',
@@ -108,138 +65,6 @@ function read<T>(key: string): T[] {
 function write<T>(key: string, data: T[]): void {
   if (typeof window === 'undefined') return;
   localStorage.setItem(key, JSON.stringify(data));
-}
-
-// ── Workloads ──
-
-export function getDemoWorkloads(projectId: string): DemoWorkload[] {
-  return read<DemoWorkload>(KEYS.workloads).filter(w => w.project_id === projectId);
-}
-
-export function getDemoWorkload(id: string): DemoWorkload | null {
-  return read<DemoWorkload>(KEYS.workloads).find(w => w.id === id) ?? null;
-}
-
-export function createDemoWorkload(data: {
-  project_id: string;
-  name: string;
-  source_type: 'image' | 'git';
-  image?: string;
-  git_repo?: string;
-  git_branch?: string;
-  dockerfile_path?: string;
-  replicas: number;
-  port?: number;
-  env?: Record<string, string>;
-}): DemoWorkload {
-  const workload: DemoWorkload = {
-    id: generateId(),
-    project_id: data.project_id,
-    name: data.name,
-    source_type: data.source_type,
-    image: data.image ?? null,
-    git_repo: data.git_repo ?? null,
-    git_branch: data.git_branch ?? null,
-    dockerfile_path: data.dockerfile_path ?? null,
-    replicas: data.replicas,
-    port: data.port ?? null,
-    env: data.env ?? {},
-    phase: 'running', // demo: instantly "running"
-    addons: [],
-    created_at: new Date().toISOString(),
-  };
-  const all = read<DemoWorkload>(KEYS.workloads);
-  all.push(workload);
-  write(KEYS.workloads, all);
-  return workload;
-}
-
-export function deleteDemoWorkload(id: string): void {
-  const all = read<DemoWorkload>(KEYS.workloads).filter(w => w.id !== id);
-  write(KEYS.workloads, all);
-}
-
-// ── Addon Attachments ──
-
-export function attachAddonToWorkload(workloadId: string, addon: {
-  addon_type: string;
-  addon_name: string;
-  config: Record<string, string>;
-  env_bindings: Record<string, string>;
-}): DemoAddonAttachment {
-  const all = read<DemoWorkload>(KEYS.workloads);
-  const workload = all.find(w => w.id === workloadId);
-  if (!workload) throw new Error('Workload not found');
-
-  const attachment: DemoAddonAttachment = {
-    id: generateId(),
-    addon_type: addon.addon_type,
-    addon_name: addon.addon_name,
-    config: addon.config,
-    env_bindings: addon.env_bindings,
-    created_at: new Date().toISOString(),
-  };
-  workload.addons.push(attachment);
-  write(KEYS.workloads, all);
-  return attachment;
-}
-
-export function detachAddonFromWorkload(workloadId: string, addonId: string): void {
-  const all = read<DemoWorkload>(KEYS.workloads);
-  const workload = all.find(w => w.id === workloadId);
-  if (!workload) return;
-  workload.addons = workload.addons.filter(a => a.id !== addonId);
-  write(KEYS.workloads, all);
-}
-
-// ── Stack Templates ──
-
-export function getDemoStackTemplates(): DemoStackTemplate[] {
-  return read<DemoStackTemplate>(KEYS.templates);
-}
-
-export function getDemoStackTemplate(id: string): DemoStackTemplate | null {
-  return read<DemoStackTemplate>(KEYS.templates).find(t => t.id === id) ?? null;
-}
-
-export function createStackTemplateFromWorkload(
-  workload: DemoWorkload,
-  meta: { name: string; description: string; variables: DemoStackVariable[] }
-): DemoStackTemplate {
-  const template: DemoStackTemplate = {
-    id: generateId(),
-    name: meta.name,
-    description: meta.description,
-    source_workload_id: workload.id,
-    workload_config: {
-      name: workload.name,
-      source_type: workload.source_type,
-      image: workload.image,
-      git_repo: workload.git_repo,
-      git_branch: workload.git_branch,
-      dockerfile_path: workload.dockerfile_path,
-      replicas: workload.replicas,
-      port: workload.port,
-      env: workload.env,
-    },
-    addons: workload.addons.map(a => ({
-      addon_type: a.addon_type,
-      addon_name: a.addon_name,
-      config: a.config,
-      env_bindings: a.env_bindings,
-    })),
-    variables: meta.variables,
-    created_at: new Date().toISOString(),
-  };
-  const all = read<DemoStackTemplate>(KEYS.templates);
-  all.push(template);
-  write(KEYS.templates, all);
-  return template;
-}
-
-export function deleteDemoStackTemplate(id: string): void {
-  const all = read<DemoStackTemplate>(KEYS.templates).filter(t => t.id !== id);
-  write(KEYS.templates, all);
 }
 
 // ── Deployed Stacks ──
@@ -362,8 +187,3 @@ export function deleteDemoProject(id: string): void {
   write(KEYS.projects, all);
 }
 
-// ── All Workloads (across projects) ──
-
-export function getAllDemoWorkloads(): DemoWorkload[] {
-  return read<DemoWorkload>(KEYS.workloads);
-}

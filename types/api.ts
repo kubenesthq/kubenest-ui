@@ -137,75 +137,10 @@ export interface IngressConfig {
   annotations: Record<string, string> | null;
 }
 
-// Workload types (Title-case to match backend WorkloadPhase enum)
-export type WorkloadPhase = 'Pending' | 'Building' | 'Deploying' | 'Running' | 'Degraded' | 'Failed';
-export type WorkloadType = 'deployment' | 'statefulset';
-
 export interface ChartSpec {
   repo: string;
   name: string;
   version: string;
-}
-
-export interface Workload {
-  id: string;
-  project_id: string;
-  name: string;
-  type: WorkloadType;
-  image: string | null;
-  git_source: string | null;
-  replicas: number;
-  ready_replicas: number;
-  port: number | null;
-  phase: WorkloadPhase;
-  ingress_config: IngressConfig | null;
-  build_config: Record<string, unknown> | null;
-  env_config: Array<{ name: string; value?: string; valueFrom?: Record<string, unknown> }> | null;
-  exports: Record<string, unknown> | null;
-  url: string | null;
-  deployed_at: string | null;
-  created_at: string;
-  updated_at: string | null;
-  chart_config: { chart?: ChartSpec; values?: Record<string, unknown> } | null;
-}
-
-export interface CreateWorkloadRequest {
-  name: string;
-  project_id: string;
-  image?: string;
-  git_source?: string;
-  type?: WorkloadType;
-  replicas?: number;
-  port?: number;
-  build_config?: Record<string, unknown>;
-  ingress?: IngressConfig;
-  chart?: ChartSpec;
-  values?: Record<string, unknown>;
-  env?: Array<{ name: string; value: string }>;
-}
-
-export interface EnvVarInput {
-  name: string;
-  value?: string;
-  export_ref?: {
-    addon_instance_id: string;
-    export_key: string;
-  };
-}
-
-export interface WorkloadUpdateRequest {
-  name?: string;
-  image?: string;
-  git_source?: string;
-  replicas?: number;
-  port?: number;
-  build_config?: Record<string, unknown>;
-  ingress?: IngressConfig;
-  env?: EnvVarInput[];
-}
-
-export interface ScaleRequest {
-  replicas: number;
 }
 
 // Pagination types (matches backend PaginatedListResponse)
@@ -323,7 +258,6 @@ export interface CreateRegistrySecretRequest {
 // Specific paginated response types
 export type ClusterListResponse = PaginatedResponse<Cluster>;
 export type ProjectListResponse = PaginatedResponse<Project>;
-export type WorkloadListResponse = PaginatedResponse<Workload>;
 export type AddonDefinitionListResponse = PaginatedResponse<AddonDefinition>;
 export type AddonInstanceListResponse = PaginatedResponse<AddonInstance>;
 
@@ -425,21 +359,95 @@ export interface AppCreate {
   timeout?: string;
 }
 
+export interface AppPatch {
+  components?: AppComponent[];
+  timeout?: string;
+}
+
+export interface AppReadComponent {
+  name: string;
+  type: AppComponentType;
+}
+
 export interface AppRead {
   uid: string;
   name: string;
   namespace: string;
   phase: AppPhase;
-  components: AppComponent[];
+  message?: string | null;
+  component_count: number;
+  components: AppReadComponent[];
   project_id: string;
   created_at: string;
   updated_at: string | null;
 }
 
+export interface AppList {
+  data: AppRead[];
+  total_count: number;
+}
+
+export interface AppRedeployResponse {
+  message: string;
+  name: string;
+  namespace: string;
+  components_synced: number;
+}
+
+export interface ComponentStatus {
+  name: string;
+  type: string;
+  health?: string | null;
+  sync?: string | null;
+  phase: string;
+}
+
+export interface AppStatusResponse {
+  name: string;
+  namespace: string;
+  phase: string;
+  components: ComponentStatus[];
+}
+
+export interface ComponentSecretList {
+  component: string;
+  keys: string[];
+}
+
+export interface ComponentSecretUpsert {
+  secrets: Record<string, string>;
+}
+
+// Deployment history (formerly under workloads, now under apps).
+export type DeploymentTargetType = 'workload' | 'stack_deploy';
+export type DeploymentStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+export type DeploymentTrigger = 'user' | 'automated';
+
+export interface DeploymentRecord {
+  id: string;
+  target_type: DeploymentTargetType;
+  target_id: string;
+  description: string;
+  sha: string | null;
+  status: DeploymentStatus;
+  triggered_by: DeploymentTrigger;
+  user_id: string | null;
+  error_message: string | null;
+  created_at: string;
+  completed_at: string | null;
+  prior_state: Record<string, unknown> | null;
+}
+
+export interface DeploymentListResponse {
+  data: DeploymentRecord[];
+  total_count: number;
+  page: number;
+  items_per_page: number;
+}
+
 // Type aliases for compatibility
 export type ClusterCreateRequest = CreateClusterRequest;
 export type ProjectCreateRequest = CreateProjectRequest;
-export type WorkloadCreateRequest = CreateWorkloadRequest;
 
 // Connection status derived from cluster status
 export type ConnectionStatus = 'connected' | 'disconnected' | 'pending';
