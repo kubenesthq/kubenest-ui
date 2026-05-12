@@ -261,8 +261,37 @@ export type ProjectListResponse = PaginatedResponse<Project>;
 export type AddonDefinitionListResponse = PaginatedResponse<AddonDefinition>;
 export type AddonInstanceListResponse = PaginatedResponse<AddonInstance>;
 
-// Cloud credential types
-export type CloudProvider = 'AWS';
+// Cloud credential types — provider ids match the backend CloudProvider enum (lowercase).
+export type CloudProvider = 'aws' | 'gcp' | 'azure' | 'do' | 'metal' | 'ssh';
+
+export interface CloudProviderInfo {
+  id: CloudProvider;
+  label: string;
+  /** false = "coming soon": credential shapes are accepted but provisioning isn't wired yet. */
+  wired: boolean;
+}
+
+// The platform's provider catalogue + wired/coming-soon status (mirrors the
+// backend PROVIDER_CAPABILITIES table). Only `wired` providers can provision.
+export const CLOUD_PROVIDERS: CloudProviderInfo[] = [
+  { id: 'aws', label: 'Amazon Web Services', wired: true },
+  { id: 'gcp', label: 'Google Cloud', wired: false },
+  { id: 'azure', label: 'Microsoft Azure', wired: false },
+  { id: 'do', label: 'DigitalOcean', wired: false },
+  { id: 'metal', label: 'Bare metal', wired: false },
+  { id: 'ssh', label: 'Existing hosts (SSH)', wired: false },
+];
+
+export function cloudProviderInfo(id: string | null | undefined): CloudProviderInfo {
+  const key = (id ?? '').toLowerCase();
+  return (
+    CLOUD_PROVIDERS.find((p) => p.id === key) ?? {
+      id: (key || 'aws') as CloudProvider,
+      label: (id ?? 'Unknown').toUpperCase(),
+      wired: false,
+    }
+  );
+}
 
 export interface CloudCredential {
   id: string;
@@ -273,6 +302,9 @@ export interface CloudCredential {
   org_id: string | null;
   created_at: string;
   updated_at: string | null;
+  /** Provisioning capability flags for this credential's provider (kn-b6). */
+  wired?: boolean;
+  coming_soon?: boolean;
 }
 
 export interface CloudCredentialCreate {

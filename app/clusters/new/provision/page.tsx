@@ -27,7 +27,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useCurrentOrg } from '@/hooks/useOrganization';
 import { getCloudCredentials } from '@/api/cloud-credentials';
 import { createCluster } from '@/api/clusters';
-import type { CloudCredential, ComponentsConfig } from '@/types/api';
+import { CLOUD_PROVIDERS, cloudProviderInfo, type CloudCredential, type CloudProvider, type ComponentsConfig } from '@/types/api';
 import { ComponentSelector } from '@/components/clusters/ComponentSelector';
 
 const AWS_REGIONS = [
@@ -51,9 +51,10 @@ const fadeInUp = {
 };
 const easeOutQuart = [0.25, 1, 0.5, 1] as const;
 
-type WizardStep = 'credential' | 'configure' | 'components' | 'review';
+type WizardStep = 'provider' | 'credential' | 'configure' | 'components' | 'review';
 
 interface ProvisionConfig {
+  provider: CloudProvider | '';
   credentialId: string;
   credentialName: string;
   region: string;
@@ -72,6 +73,7 @@ const defaultComponents: ComponentsConfig = {
 };
 
 const defaultConfig: ProvisionConfig = {
+  provider: '',
   credentialId: '',
   credentialName: '',
   region: 'us-east-1',
@@ -83,17 +85,22 @@ const defaultConfig: ProvisionConfig = {
 };
 
 const STEPS: { key: WizardStep; label: string }[] = [
+  { key: 'provider', label: 'Provider' },
   { key: 'credential', label: 'Credential' },
   { key: 'configure', label: 'Configure' },
   { key: 'components', label: 'Components' },
   { key: 'review', label: 'Review' },
 ];
 
+function sameProvider(credProvider: string | null | undefined, provider: CloudProvider | ''): boolean {
+  return !!provider && (credProvider ?? '').toLowerCase() === provider;
+}
+
 export default function ProvisionClusterPage() {
   const router = useRouter();
   const { isAuthenticated } = useAuth(true);
   const { orgId } = useCurrentOrg();
-  const [step, setStep] = useState<WizardStep>('credential');
+  const [step, setStep] = useState<WizardStep>('provider');
   const [config, setConfig] = useState<ProvisionConfig>(defaultConfig);
   const [credentials, setCredentials] = useState<CloudCredential[]>([]);
   const [loadingCreds, setLoadingCreds] = useState(true);
@@ -117,6 +124,10 @@ export default function ProvisionClusterPage() {
   if (!isAuthenticated) return null;
 
   const stepIndex = STEPS.findIndex((s) => s.key === step);
+  const providerInfo = config.provider ? cloudProviderInfo(config.provider) : null;
+  const providerCreds = config.provider
+    ? credentials.filter((c) => sameProvider(c.provider, config.provider))
+    : credentials;
 
   async function handleSubmit() {
     setSubmitting(true);
@@ -125,7 +136,7 @@ export default function ProvisionClusterPage() {
       const result = await createCluster(orgId!, {
         name: config.clusterName,
         description: config.description || undefined,
-        provider: 'AWS',
+        provider: config.provider || undefined,
         credential_id: config.credentialId,
         region: config.region,
         instance_type: config.instanceType,
@@ -141,6 +152,8 @@ export default function ProvisionClusterPage() {
 
   function canProceed(): boolean {
     switch (step) {
+      case 'provider':
+        return !!config.provider && cloudProviderInfo(config.provider).wired;
       case 'credential':
         return !!config.credentialId;
       case 'configure':
@@ -168,12 +181,28 @@ export default function ProvisionClusterPage() {
     }
   }
 
+  function selectProvider(id: CloudProvider) {
+    if (!cloudProviderInfo(id).wired) return; // coming-soon: no pseudo-success path
+    setConfig((prev) => {
+      const keepCred = sameProvider(
+        credentials.find((c) => c.id === prev.credentialId)?.provider,
+        id,
+      );
+      return {
+        ...prev,
+        provider: id,
+        credentialId: keepCred ? prev.credentialId : '',
+        credentialName: keepCred ? prev.credentialName : '',
+      };
+    });
+  }
+
   function selectCredential(cred: CloudCredential) {
     setConfig((prev) => ({
       ...prev,
       credentialId: cred.id,
       credentialName: cred.name,
-      region: cred.region,
+      region: cred.region || prev.region,
     }));
   }
 
@@ -200,11 +229,11 @@ export default function ProvisionClusterPage() {
         transition={{ duration: 0.4, delay: 0.05, ease: easeOutQuart }}
       >
         <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Provision New Cluster</h1>
-        <p className="text-sm text-zinc-500 mt-1">Create a managed Kubernetes cluster on your cloud provider</p>
+        <p className="text-sm text-zinc-500 mt-1">Create a managed Kubernetes cluster on your cloud provider — no SSH or kubeconfig handling required.</p>
       </motion.div>
 
       {/* Step Indicator */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         {STEPS.map((s, i) => (
           <div key={s.key} className="flex items-center gap-2">
             <div
@@ -227,13 +256,81 @@ export default function ProvisionClusterPage() {
       </div>
 
       {error && (
-        <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
+        <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 flex items-center gap-2" data-testid="provision-error">
           <AlertCircle className="h-4 w-4 shrink-0" />
           {error}
         </div>
       )}
 
-      {/* Step 1: Select Credential */}
+      {/* Step: Provider */}
+      {step === 'provider' && (
+        <motion.div
+          variants={fadeInUp}
+          initial="initial"
+          animate="animate"
+          transition={{ duration: 0.4, delay: 0.1, ease: easeOutQuart }}
+        >
+          <Card className="border-zinc-200">
+            <CardHeader>
+              <CardTitle className="text-base">Choose a cloud provider</CardTitle>
+              <p className="text-xs text-zinc-500 mt-1">KubeNest provisions and bootstraps the cluster for you. Providers marked &ldquo;coming soon&rdquo; aren&apos;t wired for provisioning yet.</p>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" data-testid="provider-grid">
+                {CLOUD_PROVIDERS.map((p) => {
+                  const selected = config.provider === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      data-testid={`provider-${p.id}`}
+                      data-wired={p.wired ? 'true' : 'false'}
+                      disabled={!p.wired}
+                      aria-pressed={selected}
+                      onClick={() => selectProvider(p.id)}
+                      className={`text-left rounded-lg border p-4 transition-colors ${
+                        !p.wired
+                          ? 'border-zinc-100 bg-zinc-50/60 cursor-not-allowed opacity-70'
+                          : selected
+                            ? 'border-zinc-900 bg-zinc-50'
+                            : 'border-zinc-200 hover:border-zinc-300'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${p.wired ? 'bg-orange-100' : 'bg-zinc-200'}`}>
+                            <Cloud className={`h-4 w-4 ${p.wired ? 'text-orange-600' : 'text-zinc-400'}`} />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-zinc-900">{p.label}</p>
+                            <p className="text-xs text-zinc-400 font-mono">{p.id}</p>
+                          </div>
+                        </div>
+                        {p.wired ? (
+                          selected && (
+                            <div className="h-5 w-5 rounded-full bg-zinc-900 flex items-center justify-center shrink-0">
+                              <Check className="h-3 w-3 text-white" />
+                            </div>
+                          )
+                        ) : (
+                          <span className="shrink-0 px-2 py-0.5 rounded-full bg-zinc-200 text-zinc-500 text-[10px] font-medium uppercase tracking-wide" data-testid={`provider-${p.id}-coming-soon`}>
+                            Coming soon
+                          </span>
+                        )}
+                      </div>
+                      {!p.wired && (
+                        <p className="text-[11px] text-zinc-400 mt-2">Credential shapes are accepted, but provisioning isn&apos;t wired for this provider yet.</p>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Step: Select Credential */}
       {step === 'credential' && (
         <motion.div
           variants={fadeInUp}
@@ -243,27 +340,28 @@ export default function ProvisionClusterPage() {
         >
           <Card className="border-zinc-200">
             <CardHeader>
-              <CardTitle className="text-base">Select Cloud Credential</CardTitle>
+              <CardTitle className="text-base">Select a {providerInfo?.label ?? 'cloud'} credential</CardTitle>
             </CardHeader>
             <CardContent>
               {loadingCreds ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
                 </div>
-              ) : credentials.length === 0 ? (
-                <div className="text-center py-8 space-y-3">
+              ) : providerCreds.length === 0 ? (
+                <div className="text-center py-8 space-y-3" data-testid="no-credentials">
                   <Cloud className="h-10 w-10 text-zinc-300 mx-auto" />
-                  <p className="text-sm text-zinc-500">No cloud credentials configured.</p>
+                  <p className="text-sm text-zinc-500">No {providerInfo?.label ?? 'cloud'} credentials configured.</p>
                   <Button size="sm" variant="outline" asChild>
                     <Link href="/settings/cloud-credentials">Add Credential</Link>
                   </Button>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {credentials.map((cred) => (
+                  {providerCreds.map((cred) => (
                     <button
                       key={cred.id}
                       type="button"
+                      data-testid={`credential-${cred.id}`}
                       onClick={() => selectCredential(cred)}
                       className={`w-full text-left rounded-lg border p-4 transition-colors ${
                         config.credentialId === cred.id
@@ -279,7 +377,7 @@ export default function ProvisionClusterPage() {
                           <div>
                             <p className="text-sm font-medium text-zinc-900">{cred.name}</p>
                             <p className="text-xs text-zinc-400">
-                              {cred.provider} &middot; {cred.region} &middot; ****{cred.access_key_id.slice(-4)}
+                              {cloudProviderInfo(cred.provider).label} &middot; {cred.region} &middot; ****{cred.access_key_id.slice(-4)}
                             </p>
                           </div>
                         </div>
@@ -298,7 +396,7 @@ export default function ProvisionClusterPage() {
         </motion.div>
       )}
 
-      {/* Step 2: Configure */}
+      {/* Step: Configure */}
       {step === 'configure' && (
         <motion.div
           variants={fadeInUp}
@@ -317,6 +415,7 @@ export default function ProvisionClusterPage() {
                   <Input
                     placeholder="prod-us-west"
                     className="border-zinc-200"
+                    data-testid="cluster-name"
                     value={config.clusterName}
                     onChange={(e) => setConfig({ ...config, clusterName: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') })}
                   />
@@ -374,6 +473,7 @@ export default function ProvisionClusterPage() {
                     min={1}
                     max={20}
                     className="border-zinc-200"
+                    data-testid="node-count"
                     value={config.nodeCount}
                     onChange={(e) => setConfig({ ...config, nodeCount: parseInt(e.target.value) || 1 })}
                   />
@@ -385,7 +485,7 @@ export default function ProvisionClusterPage() {
         </motion.div>
       )}
 
-      {/* Step 3: Components */}
+      {/* Step: Components */}
       {step === 'components' && (
         <motion.div
           variants={fadeInUp}
@@ -397,7 +497,7 @@ export default function ProvisionClusterPage() {
             <CardHeader>
               <CardTitle className="text-base">Platform Components</CardTitle>
               <p className="text-xs text-zinc-500 mt-1">
-                Select optional components to install on your cluster. All can be changed later.
+                Select optional components to install during bootstrap. All can be changed later.
               </p>
             </CardHeader>
             <CardContent>
@@ -410,7 +510,7 @@ export default function ProvisionClusterPage() {
         </motion.div>
       )}
 
-      {/* Step 4: Review */}
+      {/* Step: Review */}
       {step === 'review' && (
         <motion.div
           variants={fadeInUp}
@@ -420,7 +520,7 @@ export default function ProvisionClusterPage() {
         >
           <Card className="border-zinc-200">
             <CardHeader>
-              <CardTitle className="text-base">Review & Confirm</CardTitle>
+              <CardTitle className="text-base">Review &amp; Confirm</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -429,6 +529,10 @@ export default function ProvisionClusterPage() {
                     <div>
                       <p className="text-xs text-zinc-400">Cluster Name</p>
                       <p className="font-mono text-zinc-900">{config.clusterName}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-zinc-400">Provider</p>
+                      <p className="text-zinc-900">{providerInfo?.label ?? config.provider}</p>
                     </div>
                     <div>
                       <p className="text-xs text-zinc-400">Credential</p>
@@ -481,7 +585,7 @@ export default function ProvisionClusterPage() {
                 )}
 
                 <div className="rounded-md bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-700">
-                  This will provision infrastructure on your AWS account. You will be billed by AWS for the resources created.
+                  This will provision infrastructure on your {providerInfo?.label ?? 'cloud'} account. You will be billed by the provider for the resources created.
                 </div>
               </div>
             </CardContent>
@@ -501,6 +605,7 @@ export default function ProvisionClusterPage() {
         </Button>
         <Button
           size="sm"
+          data-testid="wizard-next"
           onClick={handleNext}
           disabled={!canProceed() || submitting}
         >

@@ -13,3 +13,8 @@ export async function getProvisioningJobLogs(jobId: string): Promise<string | nu
   const res = await apiClient.get<{ logs: string | null }>(`/provisioning-jobs/${jobId}/logs`);
   return res.logs;
 }
+
+// Retry a FAILED provisioning job, reusing its retained Terraform state.
+export async function retryProvisioningJob(jobId: string): Promise<ProvisioningJob> {
+  return apiClient.post<ProvisioningJob>(`/provisioning-jobs/${jobId}/retry`, {});
+}

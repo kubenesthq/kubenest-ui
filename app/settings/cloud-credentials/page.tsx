@@ -45,7 +45,7 @@ interface FormData {
 
 const emptyForm: FormData = {
   name: '',
-  provider: 'AWS',
+  provider: 'aws',
   access_key_id: '',
   secret_access_key: '',
   region: 'us-east-1',
@@ -205,7 +205,7 @@ export default function CloudCredentialsPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="AWS">Amazon Web Services</SelectItem>
+                    <SelectItem value="aws">Amazon Web Services</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
