@@ -7,6 +7,15 @@
 # Testing
 /coverage
 
+# Playwright e2e
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/e2e/.auth/
+# ad-hoc e2e screenshots (committed visual baselines live in e2e/**-snapshots/)
+/artifacts/
+
 # Next.js
 /.next/
 /out/

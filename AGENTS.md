@@ -12,6 +12,27 @@ bd close <id>         # Complete work
 bd sync               # Sync with git
 ```
 
+## Quality Gates
+
+Before committing UI changes, run (Node 20+ — `.nvmrc` pins 24, the image build's node):
+
+```bash
+npm run typecheck && npm run lint && npm run build
+```
+
+Behavioural changes also need a Playwright spec under `e2e/` that hits the
+**real** backend (no mocked auth, no `page.route()` stubs). See `e2e/README.md`.
+
+```bash
+npm run test:e2e                       # fast loop: next dev on :3000 -> live API
+npm run test:e2e -- e2e/smoke.spec.ts  # one spec
+E2E_BASE_URL=https://app.march-20-demo.kubenestapp.com npm run test:e2e   # full e2e against the deployed UI
+```
+
+Ad-hoc screenshots: `page.screenshot({ path: artifact('name.png') })` (helper in
+`e2e/fixtures.ts`) — output lands in `artifacts/` (gitignored). Visual baselines
+for `toHaveScreenshot()` are committed under `e2e/**-snapshots/`.
+
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
