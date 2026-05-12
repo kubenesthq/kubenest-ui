@@ -5,7 +5,7 @@
  * from design-handoff/project/js/ui.jsx. They use the per-theme CSS variables in
  * globals.css (var(--text), var(--surface), var(--accent), …).
  */
-import type { ReactNode } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 export type StatusTone = 'ok' | 'warn' | 'err' | 'info' | 'idle';
@@ -130,4 +130,70 @@ export function Avatar({ name = '?', size = 24, color }: { name?: string; size?:
 /** A 4-letter-derived deterministic color for an org/cluster glyph tile. */
 export function glyphColor(seed: string): string {
   return AVATAR_COLORS[(seed.charCodeAt(0) || 0) % AVATAR_COLORS.length];
+}
+
+/** Surface panel (the design's `Card`). `flush` drops the inner padding. */
+export function Card({
+  children,
+  className = '',
+  flush = false,
+  ...rest
+}: { children?: ReactNode; className?: string; flush?: boolean } & React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      style={{ background: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--shadow-card)' }}
+      className={cn('rounded-[10px] border', flush ? '' : 'p-4', className)}
+      {...rest}
+    >
+      {children}
+    </div>
+  );
+}
+
+type BtnVariant = 'default' | 'primary' | 'ghost' | 'danger' | 'subtle';
+type BtnSize = 'sm' | 'md' | 'lg';
+type IconC = ComponentType<{ size?: number }>;
+
+const BTN_SIZES: Record<BtnSize, string> = {
+  sm: 'h-7 px-2.5 text-[12.5px] gap-1.5',
+  md: 'h-8 px-3 text-[13px] gap-1.5',
+  lg: 'h-9 px-3.5 text-[13.5px] gap-2',
+};
+const BTN_VARIANTS: Record<BtnVariant, React.CSSProperties> = {
+  default: { background: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' },
+  primary: { background: 'var(--accent)', borderColor: 'var(--accent)', color: 'var(--on-accent)' },
+  ghost: { background: 'transparent', borderColor: 'transparent', color: 'var(--text-2)' },
+  danger: { background: 'var(--err-soft)', borderColor: 'transparent', color: 'var(--err)' },
+  subtle: { background: 'var(--surface-2)', borderColor: 'var(--border)', color: 'var(--text)' },
+};
+
+/** Button matching the design's `Btn`. */
+export function Btn({
+  children,
+  variant = 'default',
+  size = 'md',
+  icon: Icon,
+  className = '',
+  ...rest
+}: {
+  children?: ReactNode;
+  variant?: BtnVariant;
+  size?: BtnSize;
+  icon?: IconC;
+  className?: string;
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      style={{ ...BTN_VARIANTS[variant], borderWidth: 1, borderStyle: 'solid' }}
+      className={cn(
+        'inline-flex items-center justify-center rounded-md font-medium transition-all hover:opacity-90 active:scale-[.98] disabled:opacity-50',
+        BTN_SIZES[size],
+        className,
+      )}
+      {...rest}
+    >
+      {Icon && <Icon size={14} />}
+      {children}
+    </button>
+  );
 }
