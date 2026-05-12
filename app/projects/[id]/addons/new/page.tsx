@@ -14,6 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { getProject } from '@/api/projects';
 import { addonDefinitionsApi, addonInstancesApi } from '@/lib/api/addons';
 import type { AddonDefinition, AddonType, AddonInstanceCreate } from '@/types/api';
+import { ExposedValuesForm } from '@/components/addons/ExposedValuesForm';
 
 const fadeInUp = {
   initial: { opacity: 0, y: 20 },
@@ -96,6 +97,8 @@ export default function NewAddonPage() {
   const [showValues, setShowValues] = useState(false);
   const [nameError, setNameError] = useState('');
   const [valuesError, setValuesError] = useState('');
+  // Values entered via the AddonDefinition.exposed_values form (nested object).
+  const [exposedFormValues, setExposedFormValues] = useState<Record<string, unknown>>({});
 
   // Custom addon state
   const [customType, setCustomType] = useState<AddonType>('custom');
@@ -118,6 +121,14 @@ export default function NewAddonPage() {
 
   // Build catalog: backend definitions first, fall back to static list
   const backendDefs = definitionsData?.data ?? [];
+  const selectedDef =
+    selectedCard?.fromBackend && selectedCard.id
+      ? backendDefs.find((d: AddonDefinition) => d.id === selectedCard.id)
+      : undefined;
+  const exposedValues =
+    selectedDef?.exposed_values && Object.keys(selectedDef.exposed_values).length > 0
+      ? selectedDef.exposed_values
+      : null;
   const usedTypes = new Set(backendDefs.map((d: AddonDefinition) => d.type));
   const staticFallback = STATIC_CATALOG.filter((s) => !usedTypes.has(s.type));
 
@@ -196,8 +207,10 @@ export default function NewAddonPage() {
       payload.type = selectedCard.isCustom ? customType : selectedCard.type;
     }
 
-    if (parsedValues) {
-      payload.values = parsedValues;
+    // exposed_values form first, then the raw-JSON "advanced override" on top.
+    const mergedValues: Record<string, unknown> = { ...exposedFormValues, ...(parsedValues ?? {}) };
+    if (Object.keys(mergedValues).length > 0) {
+      payload.values = mergedValues;
     }
 
     if (selectedCard.isCustom && customChartRepo && customChartName && customChartVersion) {
@@ -260,6 +273,7 @@ export default function NewAddonPage() {
               <button
                 key={`${card.type}-${card.name}`}
                 type="button"
+                data-testid={`addon-card-${card.isCustom ? 'custom' : card.type}`}
                 onClick={() => handleSelectCard(card)}
                 className={`text-left p-4 rounded-xl border transition-all duration-150 ${
                   isSelected
@@ -378,7 +392,15 @@ export default function NewAddonPage() {
                 <p className="text-xs text-zinc-400 mt-1">Lowercase alphanumeric and dashes only</p>
               </div>
 
-              {/* Values override (collapsible) */}
+              {/* exposed_values form — rendered from the AddonDefinition descriptor */}
+              {exposedValues && (
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-400 mb-2">Configuration</p>
+                  <ExposedValuesForm key={selectedDef!.id} exposedValues={exposedValues} onChange={setExposedFormValues} />
+                </div>
+              )}
+
+              {/* Raw values override (collapsible advanced escape hatch) */}
               <div>
                 <button
                   type="button"
@@ -390,7 +412,7 @@ export default function NewAddonPage() {
                   ) : (
                     <ChevronRight className="h-3.5 w-3.5" />
                   )}
-                  Values override (optional)
+                  {exposedValues ? 'Advanced — raw values override (JSON)' : 'Values override (optional, JSON)'}
                 </button>
                 {showValues && (
                   <div className="mt-2">
@@ -418,6 +440,7 @@ export default function NewAddonPage() {
 
               <div className="flex items-center gap-3 pt-2">
                 <Button
+                  data-testid="addon-deploy"
                   onClick={handleSubmit}
                   disabled={createMutation.isPending}
                 >

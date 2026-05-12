@@ -21,6 +21,28 @@ import { getProject } from '@/api/projects';
 import { addonInstancesApi } from '@/lib/api/addons';
 import { AddonPhaseBadge } from '@/components/addons/AddonPhaseBadge';
 
+type AddonTab = 'overview' | 'values' | 'versions';
+const ADDON_TABS: { id: AddonTab; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'values', label: 'Values' },
+  { id: 'versions', label: 'Versions' },
+];
+
+function StubTabCard({ title, body }: { title: string; body: string }) {
+  return (
+    <Card className="border-zinc-200">
+      <CardContent className="py-8">
+        <div className="flex items-center gap-2 mb-1.5">
+          <span className="text-[10px] font-medium uppercase tracking-wide rounded px-1.5 py-0.5 bg-zinc-100 text-zinc-500">Not yet available</span>
+          <span className="text-sm font-semibold text-zinc-900">{title}</span>
+        </div>
+        <p className="text-sm text-zinc-500">{body}</p>
+        <p className="text-xs text-zinc-400 mt-1.5 font-mono">tracked by kn-b12</p>
+      </CardContent>
+    </Card>
+  );
+}
+
 const fadeInUp = {
   initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0 },
@@ -45,6 +67,7 @@ export default function AddonInstanceDetailPage() {
   const instanceId = params.instance_id as string;
   const queryClient = useQueryClient();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [tab, setTab] = useState<AddonTab>('overview');
 
   const { data: instance, isLoading } = useQuery({
     queryKey: ['addon-instance', instanceId],
@@ -149,6 +172,35 @@ export default function AddonInstanceDetailPage() {
         </Button>
       </motion.div>
 
+      {/* Tabs */}
+      <div role="tablist" className="flex items-center gap-1 border-b border-zinc-200">
+        {ADDON_TABS.map((t) => {
+          const active = t.id === tab;
+          return (
+            <button key={t.id} role="tab" aria-selected={active} onClick={() => setTab(t.id)}
+              className={`h-9 px-3 text-[13px] font-medium border-b-2 -mb-px ${active ? 'border-zinc-900 text-zinc-900' : 'border-transparent text-zinc-400 hover:text-zinc-700'}`}>
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {tab === 'values' && (
+        <StubTabCard
+          title="Values"
+          body="Editing the addon's Helm values (and saving the change as a revision) will live here once the addon-instance lifecycle is wired into this surface."
+        />
+      )}
+      {tab === 'versions' && (
+        <StubTabCard
+          title="Versions"
+          body="Per-instance revision history, rollback, and the chart-version changelog will live here once the addon-instance lifecycle is wired into this surface."
+        />
+      )}
+
+      {/* Overview tab */}
+      {tab === 'overview' && (
+      <>
       {/* Info card */}
       <motion.div
         variants={fadeInUp}
@@ -314,8 +366,8 @@ export default function AddonInstanceDetailPage() {
                 <div className="flex items-start gap-3 text-sm">
                   <div className="w-2 h-2 rounded-full bg-red-500 mt-1.5 shrink-0" />
                   <div>
-                    <p className="font-medium text-zinc-900">Addon failed</p>
-                    <p className="text-xs text-zinc-400 mt-0.5">Check operator logs for details</p>
+                    <p className="font-medium text-zinc-900">Addon install failed</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">The Helm install of <span className="font-mono">{String((instance.chart_config as Record<string, unknown> | null)?.name ?? instance.type)}</span> didn&apos;t complete. The Helm/operator error is reported on the operator side (and will surface in the Versions tab once the addon-instance lifecycle is wired in — kn-b12).</p>
                   </div>
                 </div>
               )}
@@ -323,6 +375,8 @@ export default function AddonInstanceDetailPage() {
           </CardContent>
         </Card>
       </motion.div>
+      </>
+      )}
 
       {/* Delete Dialog */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
