@@ -18,12 +18,25 @@ const config: Config = {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ["var(--font-sans)", "Inter", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "JetBrains Mono", "ui-monospace", "monospace"],
+        serif: ["var(--font-serif)", "Instrument Serif", "serif"],
+      },
       colors: {
-        border: "hsl(var(--border))",
+        // KubeNest Design tokens (hex, set per-theme via data-theme in globals.css).
+        // `border` / `accent` are shared names: shadcn's HSL-component values used
+        // to live here — they're now plain hex, so reference the var directly.
+        border: "var(--border)",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
+        surface: {
+          DEFAULT: "var(--surface)",
+          2: "var(--surface-2)",
+          3: "var(--surface-3)",
+        },
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
@@ -41,7 +54,8 @@ const config: Config = {
           foreground: "hsl(var(--muted-foreground))",
         },
         accent: {
-          DEFAULT: "hsl(var(--accent))",
+          DEFAULT: "var(--accent)",
+          soft: "var(--accent-soft)",
           foreground: "hsl(var(--accent-foreground))",
         },
         popover: {
