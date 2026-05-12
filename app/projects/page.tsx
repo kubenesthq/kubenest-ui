@@ -1,129 +1,105 @@
 'use client';
 
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { ProjectList } from '@/components/projects/ProjectList';
-import { ClusterFilter } from '@/components/projects/ClusterFilter';
+import { useRouter } from 'next/navigation';
+import { FolderKanban, Plus } from 'lucide-react';
 import { getClusters } from '@/api/clusters';
-import { getProjects, deleteProject } from '@/api/projects';
+import { getProjects } from '@/api/projects';
 import { useCurrentOrg } from '@/hooks/useOrganization';
+import { Btn, Card, Pill, StatusDot, statusTone } from '@/components/shell/primitives';
 
 export default function ProjectsPage() {
-  const [selectedCluster, setSelectedCluster] = useState('all');
-  const [deletingId, setDeletingId] = useState<string | undefined>();
-  const queryClient = useQueryClient();
+  const router = useRouter();
   const { orgId } = useCurrentOrg();
+  const [clusterFilter, setClusterFilter] = useState('all');
 
-  // Fetch clusters for filter
   const { data: clustersData, isLoading: clustersLoading } = useQuery({
     queryKey: ['clusters', orgId],
     queryFn: () => getClusters(orgId!),
     enabled: !!orgId,
   });
+  const clusters = clustersData?.data ?? [];
 
-  // Fetch all projects (we'll filter client-side for now)
   const { data: projectsData, isLoading: projectsLoading } = useQuery({
-    queryKey: ['projects', 'all'],
+    queryKey: ['projects', 'all', orgId],
     queryFn: async () => {
-      // Fetch projects from all clusters
-      const clusters = clustersData?.data || [];
-      if (clusters.length === 0) return { data: [] };
-
-      const allProjects = await Promise.all(
-        clusters.map(cluster =>
-          getProjects(cluster.id).catch(() => ({ data: [] }))
-        )
-      );
-
-      // Flatten and add cluster info
-      const projects = allProjects.flatMap((result, index) =>
-        result.data.map(project => ({
-          ...project,
-          cluster_name: clusters[index]?.name,
-          workloads_count: 0, // TODO: fetch from API
-        }))
-      );
-
-      return { data: projects };
+      if (clusters.length === 0) return { data: [] as Array<Awaited<ReturnType<typeof getProjects>>['data'][number] & { cluster_name?: string }> };
+      const results = await Promise.all(clusters.map((c) => getProjects(c.id).catch(() => ({ data: [] }))));
+      return {
+        data: results.flatMap((r, i) => r.data.map((p) => ({ ...p, cluster_name: clusters[i]?.name }))),
+      };
     },
     enabled: !!clustersData,
   });
 
-  // Delete mutation
-  const deleteMutation = useMutation({
-    mutationFn: deleteProject,
-    onMutate: (id) => {
-      setDeletingId(id);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
-      setDeletingId(undefined);
-    },
-    onError: () => {
-      setDeletingId(undefined);
-    },
-  });
+  const projects = useMemo(() => {
+    const all = projectsData?.data ?? [];
+    return clusterFilter === 'all' ? all : all.filter((p) => p.cluster_id === clusterFilter);
+  }, [projectsData, clusterFilter]);
 
-  const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
-      deleteMutation.mutate(id);
-    }
-  };
-
-  // Filter projects by cluster
-  const filteredProjects = selectedCluster === 'all'
-    ? projectsData?.data || []
-    : (projectsData?.data || []).filter(p => p.cluster_id === selectedCluster);
-
-  const clusters = clustersData?.data || [];
   const isLoading = clustersLoading || projectsLoading;
+  const createHref = clusters.length > 0 ? `/clusters/${clusters[0].id}/projects/new` : null;
 
   return (
-    <div className="container mx-auto py-8 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="px-6 py-5 max-w-[1100px] mx-auto">
+      <div className="flex items-end justify-between mb-5">
         <div>
-          <h1 className="text-3xl font-bold">Projects</h1>
-          <p className="text-muted-foreground mt-1">
-            Manage your Kubernetes projects and namespaces
+          <h1 className="text-[22px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>Projects</h1>
+          <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+            Namespaces in your clusters — each holds a flat set of apps and addons.
           </p>
         </div>
-        <Button asChild disabled={clusters.length === 0}>
-          <Link href={clusters.length > 0 ? `/clusters/${clusters[0].id}/projects/new` : '#'}>
-            Create Project
-          </Link>
-        </Button>
+        <Btn variant="primary" size="sm" icon={Plus} disabled={!createHref} onClick={() => createHref && router.push(createHref)}>New project</Btn>
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-          <CardTitle>All Projects</CardTitle>
-          <ClusterFilter
-            clusters={clusters}
-            value={selectedCluster}
-            onChange={setSelectedCluster}
-            isLoading={isLoading}
-          />
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="text-center py-12 text-muted-foreground">
-              Loading projects...
-            </div>
-          ) : clusters.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              No clusters available. Add a cluster first to create projects.
-            </div>
-          ) : (
-            <ProjectList
-              projects={filteredProjects}
-              onDelete={handleDelete}
-              isDeleting={deletingId}
-            />
+      <Card flush>
+        <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>All projects</div>
+          {clusters.length > 1 && (
+            <select
+              value={clusterFilter}
+              onChange={(e) => setClusterFilter(e.target.value)}
+              style={{ background: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }}
+              className="h-7 rounded-md border px-2 text-[12px] focus:outline-none focus:border-[var(--accent)]"
+            >
+              <option value="all">All clusters</option>
+              {clusters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
           )}
-        </CardContent>
+        </div>
+        {isLoading ? (
+          <div className="py-10 text-center text-[12.5px]" style={{ color: 'var(--text-3)' }}>Loading projects…</div>
+        ) : clusters.length === 0 ? (
+          <div className="py-10 text-center text-[12.5px]" style={{ color: 'var(--text-3)' }}>
+            No clusters yet. <Link href="/clusters/new" className="hover:underline" style={{ color: 'var(--accent)' }}>Register one</Link> before creating projects.
+          </div>
+        ) : projects.length === 0 ? (
+          <div className="py-10 text-center text-[12.5px]" style={{ color: 'var(--text-3)' }}>No projects yet in {clusterFilter === 'all' ? 'any cluster' : 'this cluster'}.</div>
+        ) : (
+          <div>
+            {projects.map((p) => (
+              <Link
+                key={p.id}
+                href={`/projects/${p.id}`}
+                className="grid grid-cols-12 items-center px-4 py-3 hover:bg-[var(--surface-2)] transition-colors text-left"
+                style={{ borderTop: '1px solid var(--border)' }}
+              >
+                <div className="col-span-5 flex items-center gap-2 min-w-0">
+                  <span className="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}><FolderKanban size={12} /></span>
+                  <span className="text-[12.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{p.name}</span>
+                </div>
+                <div className="col-span-3 text-[11.5px] font-mono truncate" style={{ color: 'var(--text-3)' }}>{p.namespace}</div>
+                <div className="col-span-3 text-[11.5px] truncate" style={{ color: 'var(--text-3)' }}>{p.cluster_name ?? p.cluster_id.slice(0, 8)}</div>
+                <div className="col-span-1 text-right flex items-center justify-end gap-1.5">
+                  <StatusDot status={statusTone(p.status)} pulse={statusTone(p.status) === 'warn'} />
+                  <Pill tone={statusTone(p.status) === 'ok' ? 'ok' : statusTone(p.status) === 'warn' ? 'warn' : statusTone(p.status) === 'err' ? 'err' : 'default'} size="sm">{p.status}</Pill>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );
