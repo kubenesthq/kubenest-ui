@@ -43,3 +43,5 @@ yarn-error.log*
 *.swp
 *.swo
 *~
+# jsm: ignore Claude skills
+/.claude/skills/
