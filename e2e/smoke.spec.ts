@@ -18,7 +18,7 @@ test.describe('smoke', () => {
     try {
       await loginViaUI(page);
       await expect(page).toHaveURL(/\/dashboard\b/);
-      await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
       await page.screenshot({ path: artifact('smoke-dashboard.png'), fullPage: true });
     } finally {
       await context.close();
@@ -29,6 +29,6 @@ test.describe('smoke', () => {
     // Uses storageState from the `setup` project (real login, real backend).
     await page.goto('/');
     await page.waitForURL(/\/dashboard\b/, { timeout: 30_000 });
-    await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
   });
 });

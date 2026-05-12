@@ -32,7 +32,7 @@ export function artifact(name: string): string {
 
 /**
  * Log in through the real /login form and wait until the authenticated app
- * shell (the Dashboard) has rendered. Leaves the page on /dashboard.
+ * shell has rendered. Leaves the page on /dashboard.
  */
 export async function loginViaUI(
   page: Page,
@@ -43,7 +43,9 @@ export async function loginViaUI(
   await page.getByLabel('Password').fill(user.password);
   await page.getByRole('button', { name: /sign in/i }).click();
 
-  // Root page (`/`) redirects authenticated users to /dashboard.
+  // Root page (`/`) redirects authenticated users to /dashboard; the app shell
+  // sidebar is the stable "authenticated and rendered" signal.
   await page.waitForURL(/\/dashboard\b/, { timeout: 30_000 });
-  await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
+  await expect(page.locator('aside').first()).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Dashboard' }).first()).toBeVisible();
 }
