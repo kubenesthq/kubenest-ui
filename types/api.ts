@@ -324,10 +324,12 @@ export interface AppEnvVar {
 }
 
 export interface WorkloadSpec {
-  image: string;
+  image?: string;
   replicas?: number;
   port?: number | null;
   env?: AppEnvVar[];
+  resources?: Record<string, unknown>;
+  values?: Record<string, unknown>;
   ingress?: {
     enabled: boolean;
     host: string;
@@ -378,6 +380,7 @@ export interface AppRead {
   component_count: number;
   components: AppReadComponent[];
   project_id: string;
+  template_id?: string | null;
   created_at: string;
   updated_at: string | null;
 }

@@ -8,6 +8,7 @@ export type SSEEventType =
   | 'connected'
   | 'heartbeat'
   | 'workload_status_update'
+  | 'application_status_changed'
   | 'addon_status_update'
   | 'project_status_update'
   | 'cluster_status_update'
@@ -241,6 +242,12 @@ export function useSSE(filters?: SSEFilters, enabled: boolean = true): UseSSERet
       // Handle 'workload_status_update' event
       eventSource.addEventListener('workload_status_update', (e) => {
         const data = JSON.parse(e.data) as WorkloadStatusEvent;
+        addEvent(data);
+      });
+
+      // Hub passthrough event used by ArgoCD app watcher updates.
+      eventSource.addEventListener('application_status_changed', (e) => {
+        const data = JSON.parse(e.data) as SSEEvent;
         addEvent(data);
       });
 

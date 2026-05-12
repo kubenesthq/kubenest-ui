@@ -1,91 +1,307 @@
 'use client';
 
-import { Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useParams, useSearchParams, useRouter } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import {
+  AlertCircle,
   ArrowLeft,
+  CheckCircle2,
   Container,
   Database,
+  Download,
   Loader2,
+  Pause,
+  Play,
+  Plus,
   RefreshCw,
   RotateCw,
   Trash2,
-  AlertCircle,
-  Pause,
-  Play,
-  Download,
-  Plus,
   X,
-  KeyRound,
 } from 'lucide-react';
-import { motion } from 'framer-motion';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { useToast } from '@/components/ui/use-toast';
-import { useAuthStore } from '@/store/auth';
 import { useQuery } from '@tanstack/react-query';
 import { getProject } from '@/api/projects';
 import { getCluster } from '@/api/clusters';
+import { useToast } from '@/components/ui/use-toast';
+import { useSSE } from '@/hooks/useSSE';
 import {
   useApp,
   useAppDeployments,
   useDeleteApp,
+  usePatchApp,
   useRedeployApp,
   useRollbackApp,
   useSyncAppStatus,
-  useComponentSecrets,
-  useUpsertComponentSecrets,
-  useDeleteComponentSecret,
 } from '@/hooks/useApps';
-import { appLogStreamUrl } from '@/lib/api/apps';
+import { appLogsStreamUrl } from '@/lib/api/apps';
+import { useAuthStore } from '@/store/auth';
+import { Btn, Card, Pill, SectionLabel, type PillTone } from '@/components/shell/primitives';
 import type {
+  AppComponent,
   AppPhase,
   AppReadComponent,
-  ComponentStatus,
+  AppStatusResponse,
   DeploymentRecord,
 } from '@/types/api';
 
-const phaseColors: Record<string, string> = {
-  Running: 'bg-emerald-100 text-emerald-700',
-  Deploying: 'bg-blue-100 text-blue-700',
-  Pending: 'bg-zinc-100 text-zinc-600',
-  Degraded: 'bg-amber-100 text-amber-700',
-  Failed: 'bg-red-100 text-red-700',
+const PHASE_TONE: Record<string, PillTone> = {
+  Running: 'ok',
+  Deploying: 'info',
+  Pending: 'default',
+  Degraded: 'warn',
+  Failed: 'err',
+  Stale: 'default',
 };
-const phaseDots: Record<string, string> = {
-  Running: 'bg-emerald-500',
-  Deploying: 'bg-blue-500',
-  Pending: 'bg-zinc-400',
-  Degraded: 'bg-amber-500',
-  Failed: 'bg-red-500',
+const PHASE_DOT: Record<string, string> = {
+  Running: 'var(--ok)',
+  Deploying: 'var(--info)',
+  Pending: 'var(--text-3)',
+  Degraded: 'var(--warn)',
+  Failed: 'var(--err)',
+  Stale: 'var(--text-3)',
+};
+const phasePriority: Record<string, number> = {
+  Failed: 4,
+  Degraded: 3,
+  Deploying: 2,
+  Pending: 1,
+  Running: 0,
 };
 
-function PhaseBadge({ phase }: { phase: string }) {
+interface LiveComponentStatus {
+  phase: string;
+  health?: string | null;
+  sync?: string | null;
+  updatedAt: number;
+}
+
+interface EnvRow {
+  name: string;
+  value: string;
+}
+
+interface EnvDraft {
+  image: string;
+  replicas: number;
+  port: string;
+  ingressEnabled: boolean;
+  ingressHost: string;
+  ingressPath: string;
+  resourcesJson: string;
+  paramsJson: string;
+  env: EnvRow[];
+  dependsOn: string[];
+}
+
+function isWorkloadType(type: unknown): boolean {
+  return typeof type === 'string' && type.toLowerCase() === 'workload';
+}
+
+function PhaseBadge({ phase, pulsing = false }: { phase: string; pulsing?: boolean }) {
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${
-        phaseColors[phase] ?? 'bg-zinc-100 text-zinc-600'
-      }`}
-    >
-      <span
-        className={`w-1.5 h-1.5 rounded-full ${
-          phaseDots[phase] ?? 'bg-zinc-400'
-        }`}
-      />
+    <Pill tone={PHASE_TONE[phase] ?? 'default'} size="sm" className={pulsing ? 'breathe' : undefined}>
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: PHASE_DOT[phase] ?? 'var(--text-3)' }} />
       {phase}
-    </span>
+    </Pill>
+  );
+}
+
+function computeAggregatePhase(
+  components: AppReadComponent[],
+  statusByName: Record<string, LiveComponentStatus>,
+  fallback: AppPhase,
+): AppPhase {
+  const workloadPhases = components
+    .filter((c) => isWorkloadType(c.type))
+    .map((c) => statusByName[c.name]?.phase ?? fallback);
+
+  if (workloadPhases.length === 0) return fallback;
+
+  const winner = workloadPhases.reduce((acc, cur) => {
+    const score = phasePriority[cur] ?? 0;
+    const best = phasePriority[acc] ?? 0;
+    return score > best ? cur : acc;
+  }, workloadPhases[0]);
+
+  return (winner as AppPhase) ?? fallback;
+}
+
+function defaultEnvDraft(): EnvDraft {
+  return {
+    image: '',
+    replicas: 1,
+    port: '',
+    ingressEnabled: false,
+    ingressHost: '',
+    ingressPath: '/',
+    resourcesJson: '{}',
+    paramsJson: '{}',
+    env: [{ name: '', value: '' }],
+    dependsOn: [],
+  };
+}
+
+function seedDraftFromHistory(componentName: string, rows: DeploymentRecord[]): EnvDraft {
+  const fallback = defaultEnvDraft();
+  for (const row of rows) {
+    const priorState = row.prior_state as Record<string, unknown> | null;
+    const spec = (priorState?.spec ?? null) as Record<string, unknown> | null;
+    const components = (spec?.components ?? null) as Array<Record<string, unknown>> | null;
+    if (!Array.isArray(components)) continue;
+
+    const comp = components.find((c) => c?.name === componentName && isWorkloadType(c?.type));
+    if (!comp) continue;
+
+    const workloadSpec = (comp.workloadSpec ?? comp.workload_spec ?? null) as Record<string, unknown> | null;
+    if (!workloadSpec) continue;
+
+    const seeded = defaultEnvDraft();
+
+    if (typeof workloadSpec.image === 'string') seeded.image = workloadSpec.image;
+    if (typeof workloadSpec.replicas === 'number') seeded.replicas = workloadSpec.replicas;
+    if (typeof workloadSpec.port === 'number') seeded.port = String(workloadSpec.port);
+
+    const ingress = workloadSpec.ingress as Record<string, unknown> | undefined;
+    if (ingress && typeof ingress === 'object') {
+      seeded.ingressEnabled = Boolean(ingress.enabled);
+      if (typeof ingress.host === 'string') seeded.ingressHost = ingress.host;
+      if (typeof ingress.path === 'string') seeded.ingressPath = ingress.path;
+    }
+
+    const env = workloadSpec.env;
+    if (Array.isArray(env)) {
+      const parsed = env
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') return null;
+          const name = (entry as Record<string, unknown>).name;
+          const value = (entry as Record<string, unknown>).value;
+          if (typeof name !== 'string') return null;
+          return { name, value: typeof value === 'string' ? value : '' };
+        })
+        .filter((entry): entry is EnvRow => Boolean(entry));
+      if (parsed.length > 0) seeded.env = parsed;
+    }
+
+    const dependsOn = comp.dependsOn ?? comp.depends_on;
+    if (Array.isArray(dependsOn)) {
+      seeded.dependsOn = dependsOn.filter((d): d is string => typeof d === 'string');
+    }
+
+    seeded.resourcesJson = JSON.stringify(workloadSpec.resources ?? {}, null, 2);
+    seeded.paramsJson = JSON.stringify(workloadSpec.values ?? {}, null, 2);
+
+    return seeded;
+  }
+
+  return fallback;
+}
+
+function parseObjectJson(raw: string, field: string): Record<string, unknown> | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  const parsed = JSON.parse(trimmed);
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${field} must be a JSON object`);
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function ComponentIcon({ type }: { type: string }) {
+  return isWorkloadType(type) ? (
+    <Container size={15} style={{ color: 'var(--accent)' }} />
+  ) : (
+    <Database size={15} style={{ color: '#8b5cf6' }} />
+  );
+}
+
+// Token-styled form controls — keep the page coherent across all three themes.
+function TInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  const { className = '', style, ...rest } = props;
+  return (
+    <input
+      {...rest}
+      style={{ background: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)', ...(style ?? {}) }}
+      className={`h-8 w-full rounded-md border px-2.5 text-[12.5px] focus:outline-none focus:border-[var(--accent)] ${className}`}
+    />
+  );
+}
+function TTextarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const { className = '', style, ...rest } = props;
+  return (
+    <textarea
+      {...rest}
+      style={{ background: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)', ...(style ?? {}) }}
+      className={`w-full rounded-md border px-2.5 py-1.5 text-[11.5px] font-mono focus:outline-none focus:border-[var(--accent)] ${className}`}
+    />
+  );
+}
+
+type TabId = 'overview' | 'deploys' | 'env' | 'logs' | 'settings' | 'monitoring';
+const TABS: { id: TabId; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'deploys', label: 'Deploys' },
+  { id: 'env', label: 'Env' },
+  { id: 'logs', label: 'Logs' },
+  { id: 'settings', label: 'Settings' },
+  { id: 'monitoring', label: 'Monitoring' },
+];
+
+function TabBar({ tab, setTab }: { tab: TabId; setTab: (t: TabId) => void }) {
+  return (
+    <div role="tablist" style={{ borderBottom: '1px solid var(--border)' }} className="flex items-center gap-1 mb-4">
+      {TABS.map((t) => {
+        const active = tab === t.id;
+        return (
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={active}
+            onClick={() => setTab(t.id)}
+            style={{ color: active ? 'var(--text)' : 'var(--text-3)', borderBottomColor: active ? 'var(--accent)' : 'transparent' }}
+            className="relative h-9 px-3 text-[13px] font-medium border-b-2 -mb-px hover:text-[var(--text)] transition-colors"
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ComponentPicker({
+  components,
+  active,
+  setActive,
+  testIdPrefix,
+}: {
+  components: AppReadComponent[];
+  active: string;
+  setActive: (n: string) => void;
+  testIdPrefix?: string;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {components.map((c) => {
+        const on = c.name === active;
+        return (
+          <button
+            key={c.name}
+            type="button"
+            onClick={() => setActive(c.name)}
+            data-testid={testIdPrefix ? `${testIdPrefix}-${c.name}` : undefined}
+            style={{
+              background: on ? 'var(--accent)' : 'var(--surface-2)',
+              color: on ? 'var(--on-accent)' : 'var(--text-2)',
+              borderColor: 'var(--border)',
+            }}
+            className="px-2.5 h-7 rounded-md border text-[12px] font-medium transition-colors hover:opacity-90"
+          >
+            {c.name}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -94,7 +310,7 @@ export default function AppDetailPage() {
     <Suspense
       fallback={
         <div className="flex items-center justify-center py-32">
-          <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+          <Loader2 className="h-6 w-6 animate-spin" style={{ color: 'var(--text-3)' }} />
         </div>
       }
     >
@@ -114,53 +330,246 @@ function AppDetailPageInner() {
   const projectId = search.get('project_id') ?? '';
 
   const appQuery = useApp(namespace, name, projectId);
+  const deploymentsPreview = useAppDeployments(namespace, name, projectId, 1, 20);
   const syncMutation = useSyncAppStatus(namespace, name, projectId);
+  const patchMutation = usePatchApp(namespace, name, projectId);
   const redeploy = useRedeployApp(namespace, name, projectId);
   const deleteApp = useDeleteApp();
+
+  const [tab, setTab] = useState<TabId>('overview');
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [liveStatuses, setLiveStatuses] = useState<ComponentStatus[] | null>(null);
-  const [livePhase, setLivePhase] = useState<string | null>(null);
+  const [statusByName, setStatusByName] = useState<Record<string, LiveComponentStatus>>({});
+  const [lastStatusRefreshAt, setLastStatusRefreshAt] = useState<number | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [clock, setClock] = useState(() => Date.now());
+  const [envDrafts, setEnvDrafts] = useState<Record<string, EnvDraft>>({});
+  const [savingComponent, setSavingComponent] = useState<string | null>(null);
+
+  const sse = useSSE(
+    projectId ? { project_id: projectId, resource_type: 'workload' } : undefined,
+    Boolean(projectId),
+  );
 
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => getProject(projectId),
     enabled: !!projectId,
   });
+
   const { data: cluster } = useQuery({
     queryKey: ['cluster', project?.cluster_id],
     queryFn: () => getCluster(project!.cluster_id),
     enabled: !!project?.cluster_id,
   });
 
-  // Auto-refresh status on first load + every 15s.
+  useEffect(() => {
+    const id = setInterval(() => setClock(Date.now()), 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  const applySyncStatus = useCallback((data: AppStatusResponse) => {
+    const now = Date.now();
+    const updates: Record<string, LiveComponentStatus> = {};
+    for (const component of data.components) {
+      updates[component.name] = {
+        phase: component.phase,
+        health: component.health ?? null,
+        sync: component.sync ?? null,
+        updatedAt: now,
+      };
+    }
+    setStatusByName((prev) => ({ ...prev, ...updates }));
+    setLastStatusRefreshAt(now);
+    setStatusError(null);
+  }, []);
+
+  const refreshViaPoll = useCallback(async () => {
+    try {
+      const data = await syncMutation.mutateAsync();
+      applySyncStatus(data);
+    } catch (error) {
+      setStatusError(error instanceof Error ? error.message : 'Status refresh failed');
+    }
+  }, [applySyncStatus, syncMutation]);
+
   useEffect(() => {
     if (!projectId || !namespace || !name) return;
-    let cancelled = false;
-    const refresh = async () => {
-      try {
-        const res = await syncMutation.mutateAsync();
-        if (!cancelled) {
-          setLiveStatuses(res.components);
-          setLivePhase(res.phase);
+    void refreshViaPoll();
+  }, [name, namespace, projectId, refreshViaPoll]);
+
+  const fallbackPollingActive = !sse.connected || sse.reconnecting || Boolean(sse.error);
+
+  useEffect(() => {
+    if (!projectId || !namespace || !name) return;
+    if (!fallbackPollingActive) return;
+    const id = setInterval(() => {
+      void refreshViaPoll();
+    }, 15000);
+    return () => clearInterval(id);
+  }, [fallbackPollingActive, name, namespace, projectId, refreshViaPoll]);
+
+  useEffect(() => {
+    const app = appQuery.data;
+    if (!app) return;
+    setStatusByName((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      const now = Date.now();
+      for (const component of app.components) {
+        if (!next[component.name]) {
+          next[component.name] = { phase: app.phase, health: null, sync: null, updatedAt: now };
+          changed = true;
         }
-      } catch {
-        // surface inline; don't toast every 15s
       }
-    };
-    refresh();
-    const id = setInterval(refresh, 15000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [namespace, name, projectId]);
+      return changed ? next : prev;
+    });
+  }, [appQuery.data]);
+
+  useEffect(() => {
+    const app = appQuery.data;
+    const event = sse.lastEvent as Record<string, unknown> | null;
+    if (!app || !event) return;
+
+    const eventType = typeof event.event_type === 'string' ? event.event_type : '';
+    if (eventType !== 'application_status_changed' && eventType !== 'workload_status_update') return;
+
+    const payload =
+      event.payload && typeof event.payload === 'object' ? (event.payload as Record<string, unknown>) : event;
+
+    const workloadName =
+      (payload.workload_name as string | undefined) ??
+      (event.workload_name as string | undefined) ??
+      (payload.workload_id as string | undefined) ??
+      (event.workload_id as string | undefined) ??
+      (event.resource_id as string | undefined);
+
+    if (!workloadName) return;
+    if (!app.components.some((component) => component.name === workloadName)) return;
+
+    const workloadNamespace =
+      (payload.workload_namespace as string | undefined) ?? (event.workload_namespace as string | undefined);
+    if (workloadNamespace && workloadNamespace !== namespace) return;
+
+    const phase =
+      (payload.phase as string | undefined) ??
+      (payload.status as string | undefined) ??
+      (event.phase as string | undefined) ??
+      'Pending';
+    const health = (payload.health as string | undefined) ?? (event.health as string | undefined) ?? null;
+    const sync = (payload.sync as string | undefined) ?? (event.sync as string | undefined) ?? null;
+
+    const now = Date.now();
+    setStatusByName((prev) => ({ ...prev, [workloadName]: { phase, health, sync, updatedAt: now } }));
+    setLastStatusRefreshAt(now);
+  }, [appQuery.data, namespace, sse.lastEvent]);
+
+  useEffect(() => {
+    const app = appQuery.data;
+    if (!app) return;
+    const rows = deploymentsPreview.data?.data ?? [];
+    setEnvDrafts((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const component of app.components) {
+        if (!isWorkloadType(component.type)) continue;
+        if (next[component.name]) continue;
+        next[component.name] = seedDraftFromHistory(component.name, rows);
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [appQuery.data, deploymentsPreview.data]);
+
+  const staleStatuses =
+    !lastStatusRefreshAt ||
+    clock - lastStatusRefreshAt > 45000 ||
+    (fallbackPollingActive && statusError !== null);
+
+  const app = appQuery.data;
+
+  const aggregatePhase: AppPhase = useMemo(() => {
+    if (!app) return 'Pending';
+    if (staleStatuses) return 'Stale' as AppPhase;
+    return computeAggregatePhase(app.components, statusByName, app.phase);
+  }, [app, staleStatuses, statusByName]);
+
+  const saveComponentPatch = useCallback(
+    (componentName: string) => {
+      const draft = envDrafts[componentName];
+      if (!draft) return;
+
+      let resources: Record<string, unknown> | undefined;
+      let values: Record<string, unknown> | undefined;
+      try {
+        resources = parseObjectJson(draft.resourcesJson, 'resources');
+        values = parseObjectJson(draft.paramsJson, 'params');
+      } catch (error) {
+        toast({
+          title: 'Invalid JSON',
+          description: error instanceof Error ? error.message : 'Invalid JSON payload',
+          variant: 'error',
+        });
+        return;
+      }
+
+      let parsedPort: number | undefined;
+      if (draft.port.trim()) {
+        const num = Number(draft.port);
+        if (!Number.isInteger(num) || num < 1 || num > 65535) {
+          toast({ title: 'Invalid port', description: 'Port must be 1-65535', variant: 'error' });
+          return;
+        }
+        parsedPort = num;
+      }
+
+      if (draft.ingressEnabled && !draft.ingressHost.trim()) {
+        toast({
+          title: 'Ingress host required',
+          description: 'Provide a host when ingress is enabled.',
+          variant: 'error',
+        });
+        return;
+      }
+
+      const env = draft.env
+        .map((entry) => ({ name: entry.name.trim(), value: entry.value }))
+        .filter((entry) => entry.name.length > 0);
+
+      const workloadSpec: Record<string, unknown> = { replicas: draft.replicas };
+      if (draft.image.trim()) workloadSpec.image = draft.image.trim();
+      if (parsedPort !== undefined) workloadSpec.port = parsedPort;
+      if (env.length > 0) workloadSpec.env = env;
+      if (draft.ingressEnabled) {
+        workloadSpec.ingress = { enabled: true, host: draft.ingressHost.trim(), path: draft.ingressPath.trim() || '/' };
+      }
+      if (resources && Object.keys(resources).length > 0) workloadSpec.resources = resources;
+      if (values && Object.keys(values).length > 0) workloadSpec.values = values;
+
+      const payload: AppComponent = { name: componentName, type: 'workload', workload_spec: workloadSpec };
+      if (draft.dependsOn.length > 0) payload.depends_on = draft.dependsOn;
+
+      setSavingComponent(componentName);
+      patchMutation.mutate(
+        { components: [payload] },
+        {
+          onSuccess: () => {
+            setSavingComponent(null);
+            toast({ title: 'App updated', description: `Patched component ${componentName}.` });
+          },
+          onError: (error: Error) => {
+            setSavingComponent(null);
+            toast({ title: 'Patch failed', description: error.message, variant: 'error' });
+          },
+        },
+      );
+    },
+    [envDrafts, patchMutation, toast],
+  );
 
   const handleRedeploy = () => {
     redeploy.mutate(undefined, {
       onSuccess: (res) => toast({ title: 'Redeploy triggered', description: res.message }),
-      onError: (e: Error) =>
-        toast({ title: 'Redeploy failed', description: e.message, variant: 'error' }),
+      onError: (error: Error) => toast({ title: 'Redeploy failed', description: error.message, variant: 'error' }),
     });
   };
 
@@ -172,265 +581,237 @@ function AppDetailPageInner() {
           toast({ title: 'App deleted' });
           router.push('/apps');
         },
-        onError: (e: Error) =>
-          toast({ title: 'Delete failed', description: e.message, variant: 'error' }),
+        onError: (error: Error) => toast({ title: 'Delete failed', description: error.message, variant: 'error' }),
       },
     );
   };
 
   if (!projectId) {
     return (
-      <div className="px-8 py-8 max-w-3xl">
-        <Card className="border-zinc-200">
-          <CardContent className="pt-6 text-center text-sm text-zinc-500">
-            Missing project_id. Open this app from the Apps list.
-          </CardContent>
+      <div className="px-6 py-8 max-w-[900px] mx-auto">
+        <Card>
+          <p className="text-[13px]" style={{ color: 'var(--text-3)' }}>Missing project_id. Open this app from the Apps list.</p>
         </Card>
       </div>
     );
   }
-
   if (appQuery.isLoading) {
     return (
       <div className="flex items-center justify-center py-32">
-        <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+        <Loader2 className="h-6 w-6 animate-spin" style={{ color: 'var(--text-3)' }} />
       </div>
     );
   }
-
-  if (appQuery.isError || !appQuery.data) {
+  if (appQuery.isError || !app) {
     return (
-      <div className="px-8 py-8 max-w-3xl">
-        <Card className="border-zinc-200">
-          <CardContent className="pt-6 text-center text-sm text-zinc-500">
-            App not found.
-          </CardContent>
-        </Card>
+      <div className="px-6 py-8 max-w-[900px] mx-auto">
+        <Card><p className="text-[13px]" style={{ color: 'var(--text-3)' }}>App not found.</p></Card>
       </div>
     );
   }
-
-  const app = appQuery.data;
-  const aggregatePhase: AppPhase = (livePhase as AppPhase | null) ?? app.phase;
-  const components = app.components;
-  const componentStatusByName: Record<string, ComponentStatus> = {};
-  for (const s of liveStatuses ?? []) componentStatusByName[s.name] = s;
 
   return (
-    <div className="px-8 py-8 max-w-6xl space-y-6">
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25 }}
-      >
-        <Button
-          variant="ghost"
-          size="sm"
-          asChild
-          className="h-7 px-2 text-zinc-400 hover:text-zinc-700 -ml-2"
-        >
-          <Link href="/apps">
-            <ArrowLeft className="h-3.5 w-3.5 mr-1.5" />
-            Apps
-          </Link>
-        </Button>
-      </motion.div>
+    <div className="px-6 py-5 max-w-[1280px] mx-auto">
+      <Link href="/apps" className="inline-flex items-center gap-1.5 text-[12.5px] mb-4 hover:text-[var(--text)]" style={{ color: 'var(--text-3)' }}>
+        <ArrowLeft size={13} /> Apps
+      </Link>
 
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="space-y-1.5 min-w-0">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-3xl font-bold tracking-tight text-zinc-900 truncate">
-              {app.name}
-            </h1>
-            <PhaseBadge phase={aggregatePhase} />
+      {/* Hero */}
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+        <div className="min-w-0 space-y-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-[22px] font-semibold tracking-tight truncate" style={{ color: 'var(--text)' }}>{app.name}</h1>
+            <PhaseBadge phase={aggregatePhase} pulsing={!staleStatuses && sse.connected} />
+            {app.template_id ? <Pill tone="accent" size="sm">via template: {app.template_id}</Pill> : null}
           </div>
-          <p className="text-sm text-zinc-500">
+          <p className="text-[12.5px]" style={{ color: 'var(--text-3)' }}>
             {project?.name ?? namespace}
-            {cluster && <> · {cluster.name}</>}
-            {app.created_at && (
-              <> · created {format(new Date(app.created_at), 'MMM d, yyyy')}</>
-            )}
+            {cluster ? <> · {cluster.name}</> : null}
+            {app.created_at ? <> · created {format(new Date(app.created_at), 'MMM d, yyyy')}</> : null}
           </p>
-          {app.message && (
-            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-2 inline-block">
-              {app.message}
-            </p>
-          )}
+          <div className="text-[11.5px] flex items-center gap-3 flex-wrap" style={{ color: 'var(--text-3)' }}>
+            {sse.reconnecting ? (
+              <span className="inline-flex items-center gap-1.5" style={{ color: 'var(--warn)' }} data-testid="app-sse-reconnecting">
+                <Loader2 className="h-3 w-3 animate-spin" /> reconnecting...
+              </span>
+            ) : sse.connected ? (
+              <span className="inline-flex items-center gap-1.5" style={{ color: 'var(--ok)' }}>
+                <CheckCircle2 className="h-3 w-3" /> live updates
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5"><AlertCircle className="h-3 w-3" /> live stream unavailable</span>
+            )}
+            {fallbackPollingActive ? <span className="inline-flex items-center gap-1.5"><RotateCw className="h-3 w-3" /> polling fallback active</span> : null}
+            {staleStatuses ? (
+              <span className="inline-flex items-center gap-1.5" data-testid="app-status-stale"><AlertCircle className="h-3 w-3" /> statuses are stale</span>
+            ) : null}
+          </div>
+          {app.message ? (
+            <p className="text-[11.5px] rounded px-2 py-1 mt-1 inline-block" style={{ background: 'var(--warn-soft)', color: 'var(--warn)' }}>{app.message}</p>
+          ) : null}
+          {statusError ? (
+            <p className="text-[11.5px] rounded px-2 py-1 mt-1 inline-block" style={{ background: 'var(--err-soft)', color: 'var(--err)' }}>status refresh error: {statusError}</p>
+          ) : null}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => syncMutation.mutate()}
-            disabled={syncMutation.isPending}
-          >
-            <RotateCw
-              className={`h-3.5 w-3.5 mr-1.5 ${syncMutation.isPending ? 'animate-spin' : ''}`}
-            />
-            Refresh
-          </Button>
-          <Button size="sm" onClick={handleRedeploy} disabled={redeploy.isPending}>
-            <RefreshCw
-              className={`h-3.5 w-3.5 mr-1.5 ${redeploy.isPending ? 'animate-spin' : ''}`}
-            />
-            {redeploy.isPending ? 'Redeploying…' : 'Redeploy'}
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => setDeleteOpen(true)}
-          >
-            <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-            Delete
-          </Button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Btn variant="default" size="sm" icon={RotateCw} onClick={() => void refreshViaPoll()} disabled={syncMutation.isPending}>Refresh</Btn>
+          <Btn variant="primary" size="sm" icon={RefreshCw} onClick={handleRedeploy} disabled={redeploy.isPending}>{redeploy.isPending ? 'Redeploying…' : 'Redeploy'}</Btn>
+          <Btn variant="danger" size="sm" icon={Trash2} onClick={() => setDeleteOpen(true)}>Delete</Btn>
         </div>
       </div>
 
-      <Tabs defaultValue="components" className="w-full">
-        <TabsList className="h-10">
-          <TabsTrigger value="components">Components</TabsTrigger>
-          <TabsTrigger value="deployments">Deployments</TabsTrigger>
-          <TabsTrigger value="environment">Environment</TabsTrigger>
-          <TabsTrigger value="logs">Logs</TabsTrigger>
-        </TabsList>
+      <TabBar tab={tab} setTab={setTab} />
 
-        <TabsContent value="components" className="mt-4">
-          <ComponentsCard
-            components={components}
-            statuses={componentStatusByName}
-          />
-        </TabsContent>
+      {tab === 'overview' && (
+        <OverviewTab
+          components={app.components}
+          statuses={statusByName}
+          stale={staleStatuses}
+          live={!staleStatuses && sse.connected}
+          deployRows={deploymentsPreview.data?.data ?? []}
+          deployLoading={deploymentsPreview.isLoading}
+        />
+      )}
+      {tab === 'deploys' && <DeploymentsTab namespace={namespace} name={name} projectId={projectId} />}
+      {tab === 'env' && (
+        <EnvironmentPatchTab
+          components={app.components}
+          drafts={envDrafts}
+          onDraftChange={(componentName, nextDraft) => setEnvDrafts((prev) => ({ ...prev, [componentName]: nextDraft }))}
+          onSave={saveComponentPatch}
+          savingComponent={savingComponent}
+          patchPending={patchMutation.isPending}
+        />
+      )}
+      {tab === 'logs' && <LogsTab namespace={namespace} name={name} projectId={projectId} components={app.components} />}
+      {tab === 'settings' && (
+        <SettingsTab
+          appName={app.name}
+          namespace={namespace}
+          projectId={projectId}
+          templateId={app.template_id ?? null}
+          onRefresh={() => void refreshViaPoll()}
+          onRedeploy={handleRedeploy}
+          refreshing={syncMutation.isPending}
+          redeploying={redeploy.isPending}
+        />
+      )}
+      {tab === 'monitoring' && <MonitoringStubCard />}
 
-        <TabsContent value="deployments" className="mt-4">
-          <DeploymentsTab
-            namespace={namespace}
-            name={name}
-            projectId={projectId}
-          />
-        </TabsContent>
-
-        <TabsContent value="environment" className="mt-4">
-          <EnvironmentTab
-            namespace={namespace}
-            name={name}
-            projectId={projectId}
-            components={components}
-          />
-        </TabsContent>
-
-        <TabsContent value="logs" className="mt-4">
-          <LogsTab
-            namespace={namespace}
-            name={name}
-            projectId={projectId}
-            components={components}
-          />
-        </TabsContent>
-      </Tabs>
-
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete app</DialogTitle>
-            <DialogDescription>
-              Delete <strong>{app.name}</strong>? This tears down the StackDeploy
-              and all its components in <code>{namespace}</code>. This cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDeleteOpen(false)}
-              disabled={deleteApp.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={deleteApp.isPending}
-            >
-              {deleteApp.isPending ? 'Deleting…' : 'Delete'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {deleteOpen && (
+        <div className="fixed inset-0 z-[80] flex items-start justify-center pt-[14vh]" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setDeleteOpen(false)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--shadow-pop)', width: 480 }}
+            className="rounded-xl border anim-slide-up p-4"
+            role="dialog"
+            aria-label="Delete app"
+          >
+            <div className="text-[14px] font-semibold mb-1" style={{ color: 'var(--text)' }}>Delete app</div>
+            <p className="text-[12.5px] mb-3" style={{ color: 'var(--text-3)' }}>
+              Delete <span className="font-medium" style={{ color: 'var(--text-2)' }}>{app.name}</span>? This tears down the StackDeploy and all components in <span className="font-mono">{namespace}</span>. This cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" size="sm" onClick={() => setDeleteOpen(false)} disabled={deleteApp.isPending}>Cancel</Btn>
+              <Btn variant="danger" size="sm" onClick={handleDelete} disabled={deleteApp.isPending}>{deleteApp.isPending ? 'Deleting…' : 'Delete'}</Btn>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function ComponentIcon({ type }: { type: string }) {
-  return type === 'addon' ? (
-    <Database className="h-4 w-4 text-purple-500" />
-  ) : (
-    <Container className="h-4 w-4 text-blue-500" />
-  );
-}
-
-function ComponentsCard({
+function OverviewTab({
   components,
   statuses,
+  stale,
+  live,
+  deployRows,
+  deployLoading,
 }: {
   components: AppReadComponent[];
-  statuses: Record<string, ComponentStatus>;
+  statuses: Record<string, LiveComponentStatus>;
+  stale: boolean;
+  live: boolean;
+  deployRows: DeploymentRecord[];
+  deployLoading: boolean;
 }) {
-  if (components.length === 0) {
-    return (
-      <Card className="border-zinc-200">
-        <CardContent className="py-12 text-center text-sm text-zinc-500">
-          No components.
-        </CardContent>
-      </Card>
-    );
-  }
+  const recent = deployRows.slice(0, 5);
   return (
-    <Card className="border-zinc-200">
-      <CardContent className="py-2">
-        <div className="divide-y divide-zinc-100">
-          {components.map((c) => {
-            const live = statuses[c.name];
-            const phase = live?.phase ?? '—';
-            return (
-              <div
-                key={c.name}
-                className="flex items-center justify-between py-3"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <ComponentIcon type={c.type} />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-zinc-900 truncate">
-                      {c.name}
-                    </p>
-                    <p className="text-xs text-zinc-500 capitalize">{c.type}</p>
+    <div className="grid gap-4 md:grid-cols-2">
+      <Card flush>
+        <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>Live component status</div>
+          <div className="text-[11.5px] mt-0.5" style={{ color: 'var(--text-3)' }}>Per component (workloads & add-ons) — never pod names</div>
+        </div>
+        <div className="p-3 space-y-2">
+          {components.length === 0 ? (
+            <p className="text-[12.5px]" style={{ color: 'var(--text-3)' }}>No components.</p>
+          ) : (
+            components.map((component) => {
+              const liveStatus = statuses[component.name];
+              const shownPhase = stale ? 'Stale' : liveStatus?.phase ?? 'Pending';
+              return (
+                <div
+                  key={component.name}
+                  className="flex items-center justify-between gap-3 rounded-md px-3 py-2"
+                  style={{ border: '1px solid var(--border)' }}
+                  data-testid={`component-status-row-${component.name}`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <ComponentIcon type={component.type} />
+                    <div className="min-w-0">
+                      <p className="text-[12.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{component.name}</p>
+                      <p className="text-[10.5px] capitalize" style={{ color: 'var(--text-3)' }}>{component.type}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    {liveStatus?.health || liveStatus?.sync ? (
+                      <p className="text-[10.5px] mb-1" style={{ color: 'var(--text-3)' }}>
+                        {liveStatus?.health ?? '—'}{liveStatus?.sync ? ` · ${liveStatus.sync}` : ''}
+                      </p>
+                    ) : null}
+                    <PhaseBadge phase={shownPhase} pulsing={!stale && live && Boolean(liveStatus)} />
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  {live?.health && (
-                    <span className="text-xs text-zinc-500">
-                      {live.health}
-                      {live.sync ? ` · ${live.sync}` : ''}
-                    </span>
-                  )}
-                  <PhaseBadge phase={phase} />
-                </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
-      </CardContent>
-    </Card>
+      </Card>
+
+      <Card flush>
+        <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>Recent deploys</div>
+        </div>
+        <div className="p-3">
+          {deployLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--text-3)' }} />
+          ) : recent.length === 0 ? (
+            <p className="text-[12.5px]" style={{ color: 'var(--text-3)' }}>No deployments yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {recent.map((row) => (
+                <div key={row.id} className="rounded-md px-3 py-2" style={{ border: '1px solid var(--border)' }}>
+                  <p className="text-[12.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{row.description}</p>
+                  <p className="text-[10.5px]" style={{ color: 'var(--text-3)' }}>{format(new Date(row.created_at), 'MMM d, HH:mm')} · {String(row.status).toLowerCase()}</p>
+                </div>
+              ))}
+              <p className="text-[10.5px]" style={{ color: 'var(--text-4)' }}>Full timeline + redeploy/rollback continue in kn-u9.</p>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      <div className="md:col-span-2">
+        <MonitoringStubCard title="Monitoring graphs" />
+      </div>
+    </div>
   );
 }
 
-function DeploymentsTab({
-  namespace,
-  name,
-  projectId,
-}: {
-  namespace: string;
-  name: string;
-  projectId: string;
-}) {
+function DeploymentsTab({ namespace, name, projectId }: { namespace: string; name: string; projectId: string }) {
   const { toast } = useToast();
   const [page, setPage] = useState(1);
   const itemsPerPage = 20;
@@ -438,357 +819,222 @@ function DeploymentsTab({
   const rollback = useRollbackApp(namespace, name, projectId);
 
   if (deployments.isLoading) {
-    return (
-      <Card className="border-zinc-200">
-        <CardContent className="py-12 text-center">
-          <Loader2 className="h-5 w-5 animate-spin text-zinc-400 mx-auto" />
-        </CardContent>
-      </Card>
-    );
+    return <Card><div className="py-10 flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--text-3)' }} /></div></Card>;
   }
 
   const rows = deployments.data?.data ?? [];
   if (rows.length === 0) {
-    return (
-      <Card className="border-zinc-200">
-        <CardContent className="py-12 text-center text-sm text-zinc-500">
-          No deployments yet.
-        </CardContent>
-      </Card>
-    );
+    return <Card><div className="py-10 text-center text-[12.5px]" style={{ color: 'var(--text-3)' }}>No deployments yet.</div></Card>;
   }
 
-  const handleRollback = (d: DeploymentRecord) => {
-    rollback.mutate(d.id, {
-      onSuccess: () =>
-        toast({ title: 'Rolled back', description: d.description }),
-      onError: (e: Error) =>
-        toast({ title: 'Rollback failed', description: e.message, variant: 'error' }),
+  const handleRollback = (row: DeploymentRecord) => {
+    rollback.mutate(row.id, {
+      onSuccess: () => toast({ title: 'Rolled back', description: row.description }),
+      onError: (error: Error) => toast({ title: 'Rollback failed', description: error.message, variant: 'error' }),
     });
   };
 
-  const totalPages = Math.max(
-    1,
-    Math.ceil((deployments.data?.total_count ?? 0) / itemsPerPage),
-  );
+  const totalPages = Math.max(1, Math.ceil((deployments.data?.total_count ?? 0) / itemsPerPage));
 
   return (
-    <Card className="border-zinc-200">
-      <CardContent className="py-2">
-        <div className="divide-y divide-zinc-100">
-          {rows.map((d) => (
-            <div
-              key={d.id}
-              className="flex items-center justify-between py-3 gap-4"
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-zinc-900 truncate">
-                  {d.description}
-                </p>
-                <p className="text-xs text-zinc-500">
-                  {format(new Date(d.created_at), 'MMM d, HH:mm')} · {d.status}
-                  {d.error_message ? ` · ${d.error_message}` : ''}
-                </p>
-              </div>
-              <div className="shrink-0">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!d.prior_state || rollback.isPending}
-                  onClick={() => handleRollback(d)}
-                  title={
-                    d.prior_state
-                      ? 'Restore the spec captured by this deployment'
-                      : 'No prior state captured — cannot rollback'
-                  }
-                >
-                  Rollback
-                </Button>
-              </div>
+    <Card flush>
+      <div>
+        {rows.map((row) => (
+          <div key={row.id} className="flex items-center justify-between py-3 px-4 gap-4" style={{ borderTop: '1px solid var(--border)' }}>
+            <div className="min-w-0">
+              <p className="text-[12.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{row.description}</p>
+              <p className="text-[10.5px]" style={{ color: 'var(--text-3)' }}>
+                {format(new Date(row.created_at), 'MMM d, HH:mm')} · {String(row.status).toLowerCase()}{row.error_message ? ` · ${row.error_message}` : ''}
+              </p>
             </div>
-          ))}
-        </div>
-        {totalPages > 1 && (
-          <div className="flex items-center justify-end gap-2 py-2 text-xs text-zinc-500">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={page === 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              Prev
-            </Button>
-            <span>
-              {page} / {totalPages}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Next
-            </Button>
+            <div className="shrink-0">
+              <Btn
+                variant="default"
+                size="sm"
+                disabled={!row.prior_state || rollback.isPending}
+                onClick={() => handleRollback(row)}
+                title={row.prior_state ? 'Restore the spec captured by this deployment' : 'No prior state captured - cannot rollback'}
+              >
+                Rollback
+              </Btn>
+            </div>
           </div>
-        )}
-      </CardContent>
+        ))}
+      </div>
+      {totalPages > 1 ? (
+        <div className="flex items-center justify-end gap-2 py-2 px-4 text-[11.5px]" style={{ color: 'var(--text-3)', borderTop: '1px solid var(--border)' }}>
+          <Btn variant="ghost" size="sm" disabled={page === 1} onClick={() => setPage((prev) => Math.max(1, prev - 1))}>Prev</Btn>
+          <span>{page} / {totalPages}</span>
+          <Btn variant="ghost" size="sm" disabled={page >= totalPages} onClick={() => setPage((prev) => prev + 1)}>Next</Btn>
+        </div>
+      ) : null}
     </Card>
   );
 }
 
-function EnvironmentTab({
-  namespace,
-  name,
-  projectId,
+function EnvironmentPatchTab({
   components,
+  drafts,
+  onDraftChange,
+  onSave,
+  savingComponent,
+  patchPending,
 }: {
-  namespace: string;
-  name: string;
-  projectId: string;
   components: AppReadComponent[];
+  drafts: Record<string, EnvDraft>;
+  onDraftChange: (componentName: string, draft: EnvDraft) => void;
+  onSave: (componentName: string) => void;
+  savingComponent: string | null;
+  patchPending: boolean;
 }) {
-  const workloadComponents = useMemo(
-    () => components.filter((c) => c.type === 'workload'),
-    [components],
-  );
-  const [active, setActive] = useState(workloadComponents[0]?.name ?? '');
+  const workloads = useMemo(() => components.filter((component) => isWorkloadType(component.type)), [components]);
+  const [active, setActive] = useState(workloads[0]?.name ?? '');
 
-  if (workloadComponents.length === 0) {
-    return (
-      <Card className="border-zinc-200">
-        <CardContent className="py-12 text-center text-sm text-zinc-500">
-          No workload components — environment secrets unavailable.
-        </CardContent>
-      </Card>
-    );
+  useEffect(() => {
+    if (workloads.length === 0) {
+      setActive('');
+      return;
+    }
+    if (!active || !workloads.some((w) => w.name === active)) setActive(workloads[0].name);
+  }, [active, workloads]);
+
+  if (workloads.length === 0) {
+    return <Card><div className="py-10 text-center text-[12.5px]" style={{ color: 'var(--text-3)' }}>No workload components - env editing unavailable.</div></Card>;
   }
 
+  const draft = active ? drafts[active] ?? defaultEnvDraft() : defaultEnvDraft();
+  const updateDraft = (patch: Partial<EnvDraft>) => {
+    if (!active) return;
+    onDraftChange(active, { ...draft, ...patch });
+  };
+  const updateEnvRow = (index: number, patch: Partial<EnvRow>) => {
+    updateDraft({ env: draft.env.map((row, i) => (i === index ? { ...row, ...patch } : row)) });
+  };
+  const removeEnvRow = (index: number) => {
+    const next = draft.env.filter((_, i) => i !== index);
+    updateDraft({ env: next.length > 0 ? next : [{ name: '', value: '' }] });
+  };
+  const addEnvRow = () => updateDraft({ env: [...draft.env, { name: '', value: '' }] });
+
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
-        {workloadComponents.map((c) => (
-          <button
-            key={c.name}
-            type="button"
-            onClick={() => setActive(c.name)}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-              active === c.name
-                ? 'bg-zinc-900 text-white'
-                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-            }`}
-          >
-            {c.name}
-          </button>
-        ))}
-      </div>
-      {active && (
-        <ComponentSecretsCard
-          namespace={namespace}
-          name={name}
-          projectId={projectId}
-          component={active}
-        />
-      )}
+    <div className="space-y-4">
+      <Card>
+        <p className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>
+          Edit a component by name. Save sends <span className="font-mono">PATCH /apps</span> with the workload spec. Specs are seeded from deployment snapshots when one exists; otherwise fill the fields you need.
+        </p>
+      </Card>
+
+      <ComponentPicker components={workloads} active={active} setActive={setActive} testIdPrefix="env-component" />
+
+      <Card flush>
+        <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>{active}</div>
+        </div>
+        <div className="p-4 space-y-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="space-y-1 block">
+              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Image</span>
+              <TInput value={draft.image} onChange={(e) => updateDraft({ image: e.target.value })} placeholder="ghcr.io/org/app:tag" />
+            </label>
+            <label className="space-y-1 block">
+              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Replicas</span>
+              <TInput type="number" min={0} value={draft.replicas} onChange={(e) => { const n = Number(e.target.value); updateDraft({ replicas: Number.isNaN(n) ? 0 : Math.max(0, n) }); }} />
+            </label>
+            <label className="space-y-1 block">
+              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Port</span>
+              <TInput value={draft.port} onChange={(e) => updateDraft({ port: e.target.value })} placeholder="8080" />
+            </label>
+            <label className="space-y-1 block">
+              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Depends on (comma-separated)</span>
+              <TInput
+                value={draft.dependsOn.join(', ')}
+                onChange={(e) => updateDraft({ dependsOn: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
+                placeholder="postgres"
+              />
+            </label>
+          </div>
+
+          <div className="space-y-2 rounded-md p-3" style={{ border: '1px solid var(--border)' }}>
+            <label className="inline-flex items-center gap-2 text-[11.5px]" style={{ color: 'var(--text-2)' }}>
+              <input type="checkbox" checked={draft.ingressEnabled} onChange={(e) => updateDraft({ ingressEnabled: e.target.checked })} />
+              Enable ingress
+            </label>
+            {draft.ingressEnabled ? (
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="space-y-1 block">
+                  <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Ingress host</span>
+                  <TInput value={draft.ingressHost} onChange={(e) => updateDraft({ ingressHost: e.target.value })} placeholder="app.example.com" />
+                </label>
+                <label className="space-y-1 block">
+                  <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Ingress path</span>
+                  <TInput value={draft.ingressPath} onChange={(e) => updateDraft({ ingressPath: e.target.value })} placeholder="/" />
+                </label>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-[11.5px] font-medium" style={{ color: 'var(--text-2)' }}>Environment variables</p>
+              <button type="button" onClick={addEnvRow} className="inline-flex items-center gap-1 text-[11.5px] hover:text-[var(--text)]" style={{ color: 'var(--text-3)' }}>
+                <Plus className="h-3 w-3" /> Add row
+              </button>
+            </div>
+            <div className="space-y-2">
+              {draft.env.map((row, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <TInput value={row.name} onChange={(e) => updateEnvRow(index, { name: e.target.value })} placeholder="KEY" className="font-mono" />
+                  <TInput value={row.value} onChange={(e) => updateEnvRow(index, { value: e.target.value })} placeholder="value" className="font-mono" />
+                  <button type="button" onClick={() => removeEnvRow(index)} className="h-8 w-8 rounded-md flex items-center justify-center shrink-0 hover:text-[var(--err)]" style={{ color: 'var(--text-4)' }} aria-label="Remove env var">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="space-y-1 block">
+              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Resources (JSON object)</span>
+              <TTextarea value={draft.resourcesJson} onChange={(e) => updateDraft({ resourcesJson: e.target.value })} className="min-h-28" />
+            </label>
+            <label className="space-y-1 block">
+              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Params / values (JSON object)</span>
+              <TTextarea value={draft.paramsJson} onChange={(e) => updateDraft({ paramsJson: e.target.value })} className="min-h-28" />
+            </label>
+          </div>
+
+          <div className="flex items-center justify-end">
+            <Btn variant="primary" size="sm" disabled={patchPending} onClick={() => onSave(active)} data-testid={`env-save-${active}`}>
+              {patchPending && savingComponent === active ? 'Saving…' : 'Save component patch'}
+            </Btn>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }
 
-function ComponentSecretsCard({
-  namespace,
-  name,
-  projectId,
-  component,
-}: {
-  namespace: string;
-  name: string;
-  projectId: string;
-  component: string;
-}) {
-  const { toast } = useToast();
-  const secretsQuery = useComponentSecrets(namespace, name, component, projectId);
-  const upsert = useUpsertComponentSecrets(namespace, name, component, projectId);
-  const remove = useDeleteComponentSecret(namespace, name, component, projectId);
-  const [draft, setDraft] = useState<{ key: string; value: string }[]>([
-    { key: '', value: '' },
-  ]);
+function LogsTab({ namespace, name, projectId, components }: { namespace: string; name: string; projectId: string; components: AppReadComponent[] }) {
+  const workloads = useMemo(() => components.filter((component) => isWorkloadType(component.type)), [components]);
+  const [active, setActive] = useState(workloads[0]?.name ?? '');
 
-  const addRow = () => setDraft((rows) => [...rows, { key: '', value: '' }]);
-  const updateRow = (i: number, patch: Partial<{ key: string; value: string }>) =>
-    setDraft((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
-  const removeRow = (i: number) =>
-    setDraft((rows) => rows.filter((_, idx) => idx !== i));
-
-  const save = () => {
-    const payload: Record<string, string> = {};
-    for (const r of draft) {
-      const key = r.key.trim();
-      if (!key) continue;
-      payload[key] = r.value;
-    }
-    if (Object.keys(payload).length === 0) {
-      toast({ title: 'Nothing to save', variant: 'error' });
+  useEffect(() => {
+    if (workloads.length === 0) {
+      setActive('');
       return;
     }
-    upsert.mutate(
-      { secrets: payload },
-      {
-        onSuccess: () => {
-          toast({
-            title: 'Secrets saved',
-            description: 'Run Redeploy to pick up the new values',
-          });
-          setDraft([{ key: '', value: '' }]);
-        },
-        onError: (e: Error) =>
-          toast({ title: 'Save failed', description: e.message, variant: 'error' }),
-      },
-    );
-  };
+    if (!active || !workloads.some((component) => component.name === active)) setActive(workloads[0].name);
+  }, [active, workloads]);
 
-  const drop = (key: string) => {
-    remove.mutate(key, {
-      onError: (e: Error) =>
-        toast({ title: 'Delete failed', description: e.message, variant: 'error' }),
-    });
-  };
-
-  const existing = secretsQuery.data?.keys ?? [];
-
-  return (
-    <Card className="border-zinc-200">
-      <CardContent className="py-4 space-y-5">
-        <div>
-          <p className="text-xs font-medium text-zinc-700 mb-2">
-            Existing secret keys ({existing.length})
-          </p>
-          {secretsQuery.isLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
-          ) : existing.length === 0 ? (
-            <p className="text-xs text-zinc-400">No secrets set for this component.</p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {existing.map((k) => (
-                <span
-                  key={k}
-                  className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-zinc-100 text-xs font-mono text-zinc-700"
-                >
-                  <KeyRound className="h-3 w-3 text-zinc-400" />
-                  {k}
-                  <button
-                    type="button"
-                    onClick={() => drop(k)}
-                    className="text-zinc-400 hover:text-red-500"
-                    aria-label={`Remove ${k}`}
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-zinc-700">Add or update</p>
-          {draft.map((r, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <Input
-                placeholder="KEY"
-                value={r.key}
-                onChange={(e) => updateRow(i, { key: e.target.value })}
-                className="font-mono text-xs h-8 flex-1"
-              />
-              <Input
-                placeholder="value"
-                value={r.value}
-                onChange={(e) => updateRow(i, { value: e.target.value })}
-                type="password"
-                className="font-mono text-xs h-8 flex-1"
-              />
-              <button
-                type="button"
-                onClick={() => removeRow(i)}
-                className="h-8 w-8 rounded-md flex items-center justify-center text-zinc-300 hover:text-red-500"
-                aria-label="Remove row"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-          <div className="flex items-center justify-between">
-            <button
-              type="button"
-              onClick={addRow}
-              className="text-xs text-zinc-500 hover:text-zinc-900 inline-flex items-center gap-1"
-            >
-              <Plus className="h-3 w-3" /> Add row
-            </button>
-            <Button size="sm" onClick={save} disabled={upsert.isPending}>
-              {upsert.isPending ? 'Saving…' : 'Save secrets'}
-            </Button>
-          </div>
-          <p className="text-[11px] text-zinc-400">
-            Secrets become env vars on the next pod restart. Click Redeploy after saving.
-          </p>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function LogsTab({
-  namespace,
-  name,
-  projectId,
-  components,
-}: {
-  namespace: string;
-  name: string;
-  projectId: string;
-  components: AppReadComponent[];
-}) {
-  const workloadComponents = useMemo(
-    () => components.filter((c) => c.type === 'workload'),
-    [components],
-  );
-  const [active, setActive] = useState(workloadComponents[0]?.name ?? '');
-
-  if (workloadComponents.length === 0) {
-    return (
-      <Card className="border-zinc-200">
-        <CardContent className="py-12 text-center text-sm text-zinc-500">
-          No workload components — logs unavailable.
-        </CardContent>
-      </Card>
-    );
+  if (workloads.length === 0) {
+    return <Card><div className="py-10 text-center text-[12.5px]" style={{ color: 'var(--text-3)' }}>No workload components - logs unavailable.</div></Card>;
   }
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
-        {workloadComponents.map((c) => (
-          <button
-            key={c.name}
-            type="button"
-            onClick={() => setActive(c.name)}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-              active === c.name
-                ? 'bg-zinc-900 text-white'
-                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-            }`}
-          >
-            {c.name}
-          </button>
-        ))}
-      </div>
-      {active && (
-        <LogStream
-          namespace={namespace}
-          name={name}
-          projectId={projectId}
-          component={active}
-        />
-      )}
+      <ComponentPicker components={workloads} active={active} setActive={setActive} testIdPrefix="logs-component" />
+      {active ? <LogStream namespace={namespace} name={name} projectId={projectId} component={active} /> : null}
     </div>
   );
 }
@@ -798,18 +1044,8 @@ interface LogLine {
   message: string;
 }
 
-function LogStream({
-  namespace,
-  name,
-  projectId,
-  component,
-}: {
-  namespace: string;
-  name: string;
-  projectId: string;
-  component: string;
-}) {
-  const token = useAuthStore((s) => s.token);
+function LogStream({ namespace, name, projectId, component }: { namespace: string; name: string; projectId: string; component: string }) {
+  const token = useAuthStore((state) => state.token);
   const [lines, setLines] = useState<LogLine[]>([]);
   const [connected, setConnected] = useState(false);
   const [follow, setFollow] = useState(true);
@@ -837,31 +1073,33 @@ function LogStream({
     setLines([]);
 
     try {
-      const res = await fetch(
-        appLogStreamUrl(namespace, name, component, projectId, 200),
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: ctrl.signal,
-          credentials: 'include',
-        },
-      );
-      if (!res.ok) {
-        let detail = `HTTP ${res.status}`;
+      const response = await fetch(appLogsStreamUrl(namespace, name, projectId, { component, tailLines: 200 }), {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: ctrl.signal,
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        let detail = `HTTP ${response.status}`;
         try {
-          const body = await res.json();
+          const body = await response.json();
           detail = body.detail || body.message || detail;
-        } catch { /* not JSON */ }
+        } catch {
+          /* ignore non-json bodies */
+        }
         setError(detail);
         return;
       }
-      if (!res.body) {
+      if (!response.body) {
         setError('Streaming not supported');
         return;
       }
+
       setConnected(true);
-      const reader = res.body.getReader();
+      const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -870,126 +1108,146 @@ function LogStream({
         buffer = parts.pop() ?? '';
         for (const line of parts) {
           if (!line.trim() || line.startsWith('event:') || line.startsWith(':')) continue;
-          if (line.startsWith('data:')) {
-            const payload = line.slice(5).trim();
-            if (!payload) continue;
-            try {
-              const parsed = JSON.parse(payload);
-              if (parsed.type === 'connected' || parsed.event === 'connected') continue;
-              if (parsed.type === 'heartbeat' || parsed.event === 'heartbeat') continue;
-              if (parsed.type === 'closed' || parsed.event === 'closed') {
-                setConnected(false);
-                setError('Stream closed by server');
-                return;
-              }
-              append(parsed.line ?? parsed.message ?? payload);
-            } catch {
-              append(payload);
+          if (!line.startsWith('data:')) continue;
+          const raw = line.slice(5).trim();
+          if (!raw) continue;
+          try {
+            const parsed = JSON.parse(raw) as Record<string, unknown>;
+            const kind = parsed.type ?? parsed.event;
+            const componentLabel = typeof parsed.component === 'string' && parsed.component.length > 0 ? parsed.component : component;
+            if (kind === 'connected') {
+              append(`[${componentLabel}] stream connected`);
+              continue;
             }
+            if (kind === 'heartbeat') continue;
+            if (kind === 'closed') {
+              setConnected(false);
+              setError('Stream closed by server');
+              return;
+            }
+            const lineMessage =
+              typeof parsed.line === 'string' ? parsed.line : typeof parsed.message === 'string' ? parsed.message : raw;
+            append(`[${componentLabel}] ${lineMessage}`);
+          } catch {
+            append(`[${component}] ${raw}`);
           }
         }
       }
       setConnected(false);
       setError('Stream ended');
-    } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') return;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
       setConnected(false);
-      setError(e instanceof Error ? e.message : 'Connection failed');
+      setError(error instanceof Error ? error.message : 'Connection failed');
     }
-  }, [namespace, name, projectId, component, token, append]);
+  }, [append, component, name, namespace, projectId, token]);
 
   useEffect(() => {
-    connect();
+    void connect();
     return () => abortRef.current?.abort();
   }, [connect]);
 
   useEffect(() => {
-    if (follow && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [lines, follow]);
+    if (follow && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [follow, lines]);
 
   const downloadLogs = () => {
-    const blob = new Blob([lines.map((l) => l.message).join('\n')], {
-      type: 'text/plain',
-    });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${name}-${component}-${Date.now()}.log`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    const blob = new Blob([lines.map((line) => line.message).join('\n')], { type: 'text/plain' });
+    const anchor = document.createElement('a');
+    anchor.href = URL.createObjectURL(blob);
+    anchor.download = `${name}-${component}-${Date.now()}.log`;
+    anchor.click();
+    URL.revokeObjectURL(anchor.href);
   };
 
   return (
-    <Card className="border-zinc-200">
-      <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-2">
-        <div className="text-xs">
+    <Card flush>
+      <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
+        <div className="text-[11.5px]">
           {connected ? (
-            <span className="inline-flex items-center gap-1.5 text-emerald-600">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Streaming
+            <span className="inline-flex items-center gap-1.5" style={{ color: 'var(--ok)' }}>
+              <span className="w-1.5 h-1.5 rounded-full breathe" style={{ background: 'var(--ok)' }} /> streaming · {component}
             </span>
           ) : error ? (
-            <span className="inline-flex items-center gap-1.5 text-red-500">
-              <AlertCircle className="h-3 w-3" />
-              {error}
-            </span>
+            <span className="inline-flex items-center gap-1.5" style={{ color: 'var(--err)' }}><AlertCircle className="h-3 w-3" /> {error}</span>
           ) : (
-            <span className="inline-flex items-center gap-1.5 text-zinc-400">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Connecting…
-            </span>
+            <span className="inline-flex items-center gap-1.5" style={{ color: 'var(--text-3)' }}><Loader2 className="h-3 w-3 animate-spin" /> connecting...</span>
           )}
         </div>
         <div className="flex items-center gap-1">
-          {error && (
-            <Button variant="ghost" size="sm" onClick={connect} className="h-7 px-2 text-xs">
-              <RefreshCw className="h-3 w-3 mr-1" /> Retry
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setFollow((f) => !f)}
-            className="h-7 px-2 text-xs"
-          >
-            {follow ? (
-              <>
-                <Pause className="h-3 w-3 mr-1" /> Pause
-              </>
-            ) : (
-              <>
-                <Play className="h-3 w-3 mr-1" /> Follow
-              </>
-            )}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={downloadLogs}
-            disabled={lines.length === 0}
-            className="h-7 px-2 text-xs"
-          >
-            <Download className="h-3 w-3 mr-1" /> Download
-          </Button>
+          {error ? <Btn variant="ghost" size="sm" onClick={() => void connect()}><RefreshCw className="h-3 w-3 mr-1" /> Retry</Btn> : null}
+          <Btn variant="ghost" size="sm" onClick={() => setFollow((prev) => !prev)}>{follow ? <><Pause className="h-3 w-3 mr-1" /> Pause</> : <><Play className="h-3 w-3 mr-1" /> Follow</>}</Btn>
+          <Btn variant="ghost" size="sm" onClick={downloadLogs} disabled={lines.length === 0}><Download className="h-3 w-3 mr-1" /> Download</Btn>
         </div>
       </div>
-      <CardContent className="p-0">
-        <div
-          ref={scrollRef}
-          className="h-[480px] overflow-auto bg-zinc-950 text-zinc-100 font-mono text-xs p-3 leading-relaxed"
-        >
-          {lines.length === 0 && !error ? (
-            <p className="text-zinc-500">Waiting for log lines…</p>
-          ) : (
-            lines.map((l) => (
-              <div key={l.id} className="whitespace-pre-wrap break-all">
-                {l.message}
-              </div>
-            ))
-          )}
-        </div>
-      </CardContent>
+      <div
+        ref={scrollRef}
+        className="h-[480px] overflow-auto font-mono text-[11px] p-3 leading-relaxed"
+        style={{ background: 'var(--surface-3)', color: 'var(--text-2)' }}
+        data-testid="component-log-lines"
+      >
+        {lines.length === 0 && !error ? (
+          <p style={{ color: 'var(--text-3)' }}>Waiting for log lines...</p>
+        ) : (
+          lines.map((line) => (
+            <div key={line.id} className="whitespace-pre-wrap break-all">{line.message}</div>
+          ))
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function SettingsTab({
+  appName,
+  namespace,
+  projectId,
+  templateId,
+  onRefresh,
+  onRedeploy,
+  refreshing,
+  redeploying,
+}: {
+  appName: string;
+  namespace: string;
+  projectId: string;
+  templateId: string | null;
+  onRefresh: () => void;
+  onRedeploy: () => void;
+  refreshing: boolean;
+  redeploying: boolean;
+}) {
+  return (
+    <Card>
+      <SectionLabel className="mb-2.5">App settings</SectionLabel>
+      <div className="grid gap-2 text-[12px] md:grid-cols-2">
+        {([
+          ['App', appName],
+          ['Namespace', namespace],
+          ['Project', projectId],
+          ['Template', templateId ?? 'inline app (no template)'],
+        ] as const).map(([k, v]) => (
+          <div key={k}><span style={{ color: 'var(--text-3)' }}>{k}: </span><span style={{ color: 'var(--text)' }}>{v}</span></div>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2 mt-4">
+        <Btn variant="default" size="sm" icon={RotateCw} onClick={onRefresh} disabled={refreshing}>Refresh status</Btn>
+        <Btn variant="primary" size="sm" icon={RefreshCw} onClick={onRedeploy} disabled={redeploying}>{redeploying ? 'Redeploying…' : 'Redeploy now'}</Btn>
+      </div>
+    </Card>
+  );
+}
+
+function MonitoringStubCard({ title = 'Monitoring' }: { title?: string }) {
+  return (
+    <Card>
+      <div className="flex items-center gap-2 mb-2">
+        <span style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }} className="text-[10px] font-medium uppercase tracking-wide rounded px-1.5 py-0.5">Not yet available</span>
+        <span className="text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>{title}</span>
+      </div>
+      <p className="text-[12.5px]" style={{ color: 'var(--text-3)' }}>
+        Request / latency / resource graphs for this app are intentionally stubbed — not yet available, needs kn-B11/metrics. They land once the metrics provider ships.
+      </p>
     </Card>
   );
 }

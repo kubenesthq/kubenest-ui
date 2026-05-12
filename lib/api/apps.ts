@@ -130,3 +130,23 @@ export function appLogStreamUrl(
     projectId,
   )}&tail_lines=${tailLines}`;
 }
+
+export function appLogsStreamUrl(
+  namespace: string,
+  name: string,
+  projectId: string,
+  opts?: { component?: string; tailLines?: number },
+) {
+  const base =
+    typeof window === 'undefined'
+      ? process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      : '';
+  const params = new URLSearchParams({
+    project_id: projectId,
+    tail_lines: String(opts?.tailLines ?? 200),
+  });
+  if (opts?.component) {
+    params.set('component', opts.component);
+  }
+  return `${base}/api/v1/apps/${namespace}/${name}/logs?${params.toString()}`;
+}
