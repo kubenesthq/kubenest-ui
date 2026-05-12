@@ -12,7 +12,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { addonDefinitionsApi } from '@/lib/api/addons';
-import type { AddonDefinitionUpdate } from '@/types/api';
+import { AddonChangelogDrawer } from '@/components/addons/AddonChangelogDrawer';
+import type { AddonDefinitionUpdate, AddonVersionHistoryEntry } from '@/types/api';
 
 const fadeInUp = {
   initial: { opacity: 0, y: 20 },
@@ -20,6 +21,18 @@ const fadeInUp = {
 };
 
 const easeOutQuart = [0.25, 1, 0.5, 1] as const;
+
+/** Parse `text` as JSON; return it when it passes `ok`, otherwise `fallback`
+ * (empty text → `null` so an unset field reads as "no data"). */
+function parseJsonOr<T>(text: string, fallback: T, ok: (v: unknown) => boolean): T {
+  if (!text.trim()) return null as T;
+  try {
+    const v = JSON.parse(text);
+    return ok(v) ? (v as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 export default function EditAddonDefinitionPage() {
   const router = useRouter();
@@ -35,6 +48,8 @@ export default function EditAddonDefinitionPage() {
   const [chartName, setChartName] = useState('');
   const [chartVersion, setChartVersion] = useState('');
   const [defaultValues, setDefaultValues] = useState('');
+  const [versionHistoryJson, setVersionHistoryJson] = useState('');
+  const [changelogJson, setChangelogJson] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const { data: def, isLoading } = useQuery({
@@ -54,8 +69,23 @@ export default function EditAddonDefinitionPage() {
       setDefaultValues(
         def.default_values ? JSON.stringify(def.default_values, null, 2) : ''
       );
+      setVersionHistoryJson(
+        def.version_history && def.version_history.length > 0 ? JSON.stringify(def.version_history, null, 2) : ''
+      );
+      setChangelogJson(
+        def.changelog && Object.keys(def.changelog).length > 0 ? JSON.stringify(def.changelog, null, 2) : ''
+      );
     }
   }, [def]);
+
+  // Parsed view of the (possibly-edited) version_history / changelog for the drawer;
+  // falls back to the saved definition when the textarea isn't valid JSON yet.
+  const parsedVersionHistory = parseJsonOr<AddonVersionHistoryEntry[] | null>(
+    versionHistoryJson, def?.version_history ?? null, (v) => Array.isArray(v),
+  );
+  const parsedChangelog = parseJsonOr<Record<string, string> | null>(
+    changelogJson, def?.changelog ?? null, (v) => !!v && typeof v === 'object' && !Array.isArray(v),
+  );
 
   const updateMutation = useMutation({
     mutationFn: (data: AddonDefinitionUpdate) => addonDefinitionsApi.update(defId, data),
@@ -77,6 +107,22 @@ export default function EditAddonDefinitionPage() {
         JSON.parse(defaultValues);
       } catch {
         newErrors.defaultValues = 'Invalid JSON';
+      }
+    }
+    if (versionHistoryJson.trim()) {
+      try {
+        const v = JSON.parse(versionHistoryJson);
+        if (!Array.isArray(v)) newErrors.versionHistory = 'Must be a JSON array of {version, released_at?, deprecated?, changelog?}';
+      } catch {
+        newErrors.versionHistory = 'Invalid JSON';
+      }
+    }
+    if (changelogJson.trim()) {
+      try {
+        const v = JSON.parse(changelogJson);
+        if (!v || typeof v !== 'object' || Array.isArray(v)) newErrors.changelog = 'Must be a JSON object keyed by chart version';
+      } catch {
+        newErrors.changelog = 'Invalid JSON';
       }
     }
     return newErrors;
@@ -108,6 +154,15 @@ export default function EditAddonDefinitionPage() {
 
     if (defaultValues.trim()) {
       payload.default_values = JSON.parse(defaultValues);
+    }
+
+    const nextHistory = versionHistoryJson.trim() ? (JSON.parse(versionHistoryJson) as AddonVersionHistoryEntry[]) : [];
+    if (JSON.stringify(nextHistory) !== JSON.stringify(def?.version_history ?? [])) {
+      payload.version_history = nextHistory;
+    }
+    const nextChangelog = changelogJson.trim() ? (JSON.parse(changelogJson) as Record<string, string>) : {};
+    if (JSON.stringify(nextChangelog) !== JSON.stringify(def?.changelog ?? {})) {
+      payload.changelog = nextChangelog;
     }
 
     updateMutation.mutate(payload);
@@ -287,6 +342,54 @@ export default function EditAddonDefinitionPage() {
               {errors.defaultValues && (
                 <p className="text-xs text-red-500 mt-1">{errors.defaultValues}</p>
               )}
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Version history & changelog */}
+      <motion.div
+        variants={fadeInUp}
+        initial="initial"
+        animate="animate"
+        transition={{ duration: 0.4, delay: 0.21, ease: easeOutQuart }}
+      >
+        <Card className="border-zinc-200">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <CardTitle className="text-base font-semibold text-zinc-900">Version history &amp; changelog</CardTitle>
+                <p className="text-sm text-zinc-500 mt-0.5">The chart versions published for this addon and their release notes — shown to operators in the catalog.</p>
+              </div>
+              <AddonChangelogDrawer versionHistory={parsedVersionHistory} changelog={parsedChangelog} />
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <Label htmlFor="version-history" className="text-xs font-medium text-zinc-600 mb-1 block">
+                Version history (JSON array of <code className="font-mono">{'{ version, released_at?, deprecated?, changelog? }'}</code>)
+              </Label>
+              <Textarea
+                id="version-history"
+                value={versionHistoryJson}
+                onChange={(e) => setVersionHistoryJson(e.target.value)}
+                placeholder={'[\n  { "version": "15.5.23", "released_at": "2025-09-01", "changelog": "Bumped base image." }\n]'}
+                className={`font-mono text-xs min-h-[110px] ${errors.versionHistory ? 'border-red-300' : ''}`}
+              />
+              {errors.versionHistory && <p className="text-xs text-red-500 mt-1">{errors.versionHistory}</p>}
+            </div>
+            <div>
+              <Label htmlFor="changelog" className="text-xs font-medium text-zinc-600 mb-1 block">
+                Changelog (JSON object keyed by chart version)
+              </Label>
+              <Textarea
+                id="changelog"
+                value={changelogJson}
+                onChange={(e) => setChangelogJson(e.target.value)}
+                placeholder={'{\n  "15.5.23": "Bumped base image; fixed CVE-2025-1234."\n}'}
+                className={`font-mono text-xs min-h-[90px] ${errors.changelog ? 'border-red-300' : ''}`}
+              />
+              {errors.changelog && <p className="text-xs text-red-500 mt-1">{errors.changelog}</p>}
             </div>
           </CardContent>
         </Card>

@@ -20,6 +20,8 @@ import {
 import { getProject } from '@/api/projects';
 import { addonInstancesApi } from '@/lib/api/addons';
 import { AddonPhaseBadge } from '@/components/addons/AddonPhaseBadge';
+import { AddonValuesEditor } from '@/components/addons/AddonValuesEditor';
+import { AddonRevisionsPanel } from '@/components/addons/AddonRevisionsPanel';
 
 type AddonTab = 'overview' | 'values' | 'versions';
 const ADDON_TABS: { id: AddonTab; label: string }[] = [
@@ -27,21 +29,6 @@ const ADDON_TABS: { id: AddonTab; label: string }[] = [
   { id: 'values', label: 'Values' },
   { id: 'versions', label: 'Versions' },
 ];
-
-function StubTabCard({ title, body }: { title: string; body: string }) {
-  return (
-    <Card className="border-zinc-200">
-      <CardContent className="py-8">
-        <div className="flex items-center gap-2 mb-1.5">
-          <span className="text-[10px] font-medium uppercase tracking-wide rounded px-1.5 py-0.5 bg-zinc-100 text-zinc-500">Not yet available</span>
-          <span className="text-sm font-semibold text-zinc-900">{title}</span>
-        </div>
-        <p className="text-sm text-zinc-500">{body}</p>
-        <p className="text-xs text-zinc-400 mt-1.5 font-mono">tracked by kn-b12</p>
-      </CardContent>
-    </Card>
-  );
-}
 
 const fadeInUp = {
   initial: { opacity: 0, y: 20 },
@@ -185,18 +172,8 @@ export default function AddonInstanceDetailPage() {
         })}
       </div>
 
-      {tab === 'values' && (
-        <StubTabCard
-          title="Values"
-          body="Editing the addon's Helm values (and saving the change as a revision) will live here once the addon-instance lifecycle is wired into this surface."
-        />
-      )}
-      {tab === 'versions' && (
-        <StubTabCard
-          title="Versions"
-          body="Per-instance revision history, rollback, and the chart-version changelog will live here once the addon-instance lifecycle is wired into this surface."
-        />
-      )}
+      {tab === 'values' && <AddonValuesEditor instance={instance} />}
+      {tab === 'versions' && <AddonRevisionsPanel instance={instance} />}
 
       {/* Overview tab */}
       {tab === 'overview' && (
@@ -367,7 +344,12 @@ export default function AddonInstanceDetailPage() {
                   <div className="w-2 h-2 rounded-full bg-red-500 mt-1.5 shrink-0" />
                   <div>
                     <p className="font-medium text-zinc-900">Addon install failed</p>
-                    <p className="text-xs text-zinc-500 mt-0.5">The Helm install of <span className="font-mono">{String((instance.chart_config as Record<string, unknown> | null)?.name ?? instance.type)}</span> didn&apos;t complete. The Helm/operator error is reported on the operator side (and will surface in the Versions tab once the addon-instance lifecycle is wired in — kn-b12).</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      The Helm install of{' '}
+                      <span className="font-mono">{String(((instance.chart_config as { chart?: { name?: string } } | null)?.chart?.name) ?? instance.type)}</span>{' '}
+                      didn&apos;t complete. The Helm/operator error is captured on the failed revision — see the{' '}
+                      <button type="button" className="text-blue-600 hover:underline" onClick={() => setTab('versions')}>Versions tab</button>.
+                    </p>
                   </div>
                 </div>
               )}

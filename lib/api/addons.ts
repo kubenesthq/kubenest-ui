@@ -7,6 +7,10 @@ import type {
   AddonInstance,
   AddonInstanceCreate,
   AddonInstanceListResponse,
+  AddonInstancePatchRequest,
+  AddonInstanceRevisionListResponse,
+  AddonInstanceRollbackRequest,
+  AddonInstanceRollbackResponse,
 } from '@/types/api';
 
 export const addonDefinitionsApi = {
@@ -46,6 +50,23 @@ export const addonInstancesApi = {
 
   create: (data: AddonInstanceCreate) =>
     apiClient.post<AddonInstance>('/addon-instances', data),
+
+  /** Apply a values update OR a chart-version bump — records a revision, dispatches the Helm upgrade. */
+  patch: (id: string, body: AddonInstancePatchRequest) =>
+    apiClient.patch<AddonInstance>(`/addon-instances/${id}`, body),
+
+  /** Newest-first revision history (values / chart-version changes, with FAILED-revision errors). */
+  revisions: (id: string, params?: { page?: number; items_per_page?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.items_per_page) query.set('items_per_page', String(params.items_per_page));
+    const qs = query.toString();
+    return apiClient.get<AddonInstanceRevisionListResponse>(`/addon-instances/${id}/revisions${qs ? `?${qs}` : ''}`);
+  },
+
+  /** Roll back to a prior revision — records a new revision restoring it + dispatches the Helm upgrade. */
+  rollback: (id: string, body: AddonInstanceRollbackRequest) =>
+    apiClient.post<AddonInstanceRollbackResponse>(`/addon-instances/${id}/rollback`, body),
 
   delete: (id: string) =>
     apiClient.delete<void>(`/addon-instances/${id}`),

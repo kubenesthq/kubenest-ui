@@ -83,7 +83,7 @@ test.describe('addons', () => {
     await page.screenshot({ path: artifact('addons-catalog-admin.png'), fullPage: true });
   });
 
-  test('addon instance detail: Overview / Values / Versions tabs; Values & Versions are labelled stubs (kn-b12)', async ({ page }) => {
+  test('addon instance detail: Overview / Values / Versions tabs; Values & Versions are wired (kn-jub / kn-b12)', async ({ page }) => {
     await page.goto('/clusters');
     await page.waitForLoadState('domcontentloaded');
     const ref = await findAddonInstance(page);
@@ -97,12 +97,15 @@ test.describe('addons', () => {
     await expect(page.getByRole('tab', { name: 'Values' })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Versions' })).toBeVisible();
 
+    // Values tab: a real editor + a save-as-revision button (not a labelled stub).
     await page.getByRole('tab', { name: 'Values' }).click();
-    await expect(page.getByText('Not yet available').first()).toBeVisible();
-    await expect(page.getByText(/kn-b12/).first()).toBeVisible();
+    await expect(page.getByTestId('addon-values-editor')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('addon-values-save')).toBeVisible();
 
+    // Versions tab: the revision-history card (the full edit -> revision -> rollback
+    // round-trip against the real lifecycle endpoints lives in addon-lifecycle.spec.ts).
     await page.getByRole('tab', { name: 'Versions' }).click();
-    await expect(page.getByText(/kn-b12/).first()).toBeVisible();
+    await expect(page.getByTestId('addon-revisions')).toBeVisible({ timeout: 10_000 });
     await page.screenshot({ path: artifact('addons-instance-detail.png'), fullPage: true });
   });
 });

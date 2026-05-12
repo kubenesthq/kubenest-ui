@@ -5,13 +5,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 /**
- * Renders the provision-wizard form for an AddonDefinition's `exposed_values`
- * descriptor — a flat `{ "dotted.key.path": { type?, description?, title?,
- * default?, enum?, required? } }` map (see the seeded postgres AddonDefinition).
- * Reports the entered overrides up as a nested values object (dotted paths
- * expanded), so empty fields fall back to the definition's default_values
- * server-side. Mount with a `key` keyed on the definition id so it resets when
- * the selected addon changes.
+ * Renders the form for an AddonDefinition's `exposed_values` descriptor — a
+ * flat `{ "dotted.key.path": { type?, description?, title?, default?, enum?,
+ * required? } }` map (see the seeded postgres AddonDefinition). Used both in the
+ * provision wizard (fresh, fields seeded from each descriptor's `default`) and
+ * in the addon-instance Values tab (fields prefilled from the instance's current
+ * `chart_config.values` via `initialValues`). Reports the entered overrides up
+ * as a nested values object (dotted paths expanded); empty fields are omitted so
+ * they fall back to the chart / definition defaults server-side. Mount with a
+ * `key` keyed on the definition id (and, when editing, the instance's
+ * `updated_at`) so it resets when the source changes.
  */
 
 interface FieldDesc {
@@ -49,6 +52,19 @@ function setDeep(obj: Record<string, unknown>, path: string, value: unknown): vo
   cur[parts[parts.length - 1]] = value;
 }
 
+function getDeep(obj: Record<string, unknown> | undefined | null, path: string): unknown {
+  if (!obj) return undefined;
+  let cur: unknown = obj;
+  for (const k of path.split('.')) {
+    if (cur && typeof cur === 'object' && !Array.isArray(cur) && k in (cur as Record<string, unknown>)) {
+      cur = (cur as Record<string, unknown>)[k];
+    } else {
+      return undefined;
+    }
+  }
+  return cur;
+}
+
 function coerce(type: string | undefined, raw: string): unknown {
   if (type === 'boolean') return raw === 'true';
   if (type === 'number' || type === 'integer') {
@@ -61,9 +77,12 @@ function coerce(type: string | undefined, raw: string): unknown {
 export function ExposedValuesForm({
   exposedValues,
   onChange,
+  initialValues,
 }: {
   exposedValues: Record<string, unknown>;
   onChange: (values: Record<string, unknown>) => void;
+  /** Current values to prefill from (the instance's `chart_config.values` when editing). */
+  initialValues?: Record<string, unknown> | null;
 }) {
   const fields = useMemo(
     () => Object.entries(exposedValues).map(([key, raw]) => ({ key, ...parseField(raw) })),
@@ -72,7 +91,8 @@ export function ExposedValuesForm({
   const [state, setState] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
     for (const [key, raw] of Object.entries(exposedValues)) {
-      const d = parseField(raw).default;
+      const cur = getDeep(initialValues, key);
+      const d = cur !== undefined ? cur : parseField(raw).default;
       init[key] = d == null ? '' : String(d);
     }
     return init;

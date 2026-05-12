@@ -170,6 +170,14 @@ export interface ExportSchemaEntry {
   secret?: boolean;
 }
 
+/** One entry in an AddonDefinition's ordered chart-version history (kn-b12). */
+export interface AddonVersionHistoryEntry {
+  version: string;
+  released_at?: string | null;
+  deprecated?: boolean;
+  changelog?: string | null;
+}
+
 export interface AddonDefinition {
   id: string;
   cluster_id: string | null;
@@ -183,6 +191,10 @@ export interface AddonDefinition {
   default_values: Record<string, unknown> | null;
   exposed_values: Record<string, unknown> | null;
   export_schema: Record<string, ExportSchemaEntry> | null;
+  /** Ordered chart-version history; the catalog "changelog drawer" renders this. */
+  version_history: AddonVersionHistoryEntry[] | null;
+  /** Per-version changelog keyed by chart version, e.g. {"15.5.23": "release notes…"}. */
+  changelog: Record<string, string> | null;
   is_active: boolean;
   created_at: string;
   updated_at: string | null;
@@ -198,6 +210,8 @@ export interface AddonDefinitionCreate {
   tags?: string[];
   chart_config?: ChartSpec;
   default_values?: Record<string, unknown>;
+  version_history?: AddonVersionHistoryEntry[];
+  changelog?: Record<string, string>;
 }
 
 export interface AddonDefinitionUpdate {
@@ -207,6 +221,8 @@ export interface AddonDefinitionUpdate {
   tags?: string[];
   chart_config?: ChartSpec;
   default_values?: Record<string, unknown>;
+  version_history?: AddonVersionHistoryEntry[];
+  changelog?: Record<string, string>;
   is_active?: boolean;
 }
 
@@ -231,6 +247,48 @@ export interface AddonInstanceCreate {
   type?: AddonType;
   chart?: ChartSpec;
   values?: Record<string, unknown>;
+}
+
+// Addon-instance lifecycle: PATCH / revisions / rollback (kn-b12)
+export type AddonInstanceRevisionStatus = 'Pending' | 'Applied' | 'Failed';
+
+export interface AddonInstanceRevision {
+  id: string;
+  instance_id: string;
+  revision_number: number;
+  chart_config: Record<string, unknown> | null;
+  values: Record<string, unknown> | null;
+  status: AddonInstanceRevisionStatus;
+  note: string | null;
+  created_by: number | null;
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface AddonInstanceRevisionListResponse {
+  data: AddonInstanceRevision[];
+  total_count: number;
+  page: number;
+  items_per_page: number;
+}
+
+/** Exactly one of `values` / `chart_version` must be set. */
+export interface AddonInstancePatchRequest {
+  values?: Record<string, unknown>;
+  chart_version?: string;
+  note?: string;
+}
+
+/** Exactly one of `revision_id` / `revision_number` must be set. */
+export interface AddonInstanceRollbackRequest {
+  revision_id?: string;
+  revision_number?: number;
+  note?: string;
+}
+
+export interface AddonInstanceRollbackResponse {
+  message: string;
+  rolled_back_to: AddonInstanceRevision;
 }
 
 // Registry secret types
