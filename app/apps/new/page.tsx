@@ -1,87 +1,79 @@
 'use client';
 
-import { Suspense, useState, useCallback, useEffect, useMemo } from 'react';
+import { Suspense, useState, useCallback, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
+  AlertTriangle,
   ArrowLeft,
   Check,
   ChevronDown,
   ChevronUp,
+  Cog,
   Database,
   Globe,
+  Layers,
   Link2,
   Plus,
   Server,
-  Cog,
   Trash2,
   X,
-  AlertTriangle,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { getAllProjects } from '@/api/projects';
 import { addonDefinitionsApi } from '@/lib/api/addons';
+import { stackTemplatesApi } from '@/lib/api/stack-templates';
 import { useCreateApp } from '@/hooks/useApps';
+import { Btn, Card, SectionLabel } from '@/components/shell/primitives';
 import type {
   AddonDefinition,
+  AddonType,
   AppComponent,
   AppEnvVar,
   AppComponentType,
   ChartSpec,
 } from '@/types/api';
 
-/* ---------- animation ---------- */
+/* ---------- token-styled form controls ---------- */
 
-const fadeInUp = {
-  initial: { opacity: 0, y: 20 },
-  animate: { opacity: 1, y: 0 },
-};
-
-const easeOutQuart = [0.25, 1, 0.5, 1] as const;
-
-/* ---------- reusable layout ---------- */
-
-function FormRow({
-  label,
-  description,
-  required,
-  children,
-}: {
-  label: string;
-  description?: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
+function TInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  const { className = '', style, ...rest } = props;
   return (
-    <div className="grid grid-cols-[240px_1fr] gap-8 items-start py-5">
-      <div className="pt-2">
-        <p className="text-sm font-medium text-zinc-900">
-          {label}
-          {required && <span className="text-destructive ml-0.5">*</span>}
-        </p>
-        {description && (
-          <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
-            {description}
-          </p>
-        )}
-      </div>
-      <div>{children}</div>
-    </div>
+    <input
+      {...rest}
+      style={{ background: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)', ...(style ?? {}) }}
+      className={`h-8 w-full rounded-md border px-2.5 text-[12.5px] focus:outline-none focus:border-[var(--accent)] disabled:opacity-50 ${className}`}
+    />
   );
 }
 
-function SectionDivider() {
-  return <div className="border-t border-zinc-100" />;
+function TSelect(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  const { className = '', style, children, ...rest } = props;
+  return (
+    <select
+      {...rest}
+      style={{ background: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)', ...(style ?? {}) }}
+      className={`h-9 w-full rounded-md border px-2.5 text-[12.5px] focus:outline-none focus:border-[var(--accent)] disabled:opacity-50 ${className}`}
+    >
+      {children}
+    </select>
+  );
+}
+
+function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
+  return (
+    <label className="text-[11.5px] font-medium mb-1 block" style={{ color: 'var(--text-3)' }}>
+      {children}
+      {required && <span style={{ color: 'var(--err)' }} className="ml-0.5">*</span>}
+    </label>
+  );
 }
 
 /* ---------- component name validation ---------- */
 
 const k8sNameRegex = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 
-/* ---------- types for form buffer ---------- */
+/* ---------- form buffer types ---------- */
 
 type WorkloadKind = 'web-service' | 'worker';
 
@@ -111,7 +103,7 @@ interface ComponentEntry {
   collapsed: boolean;
 }
 
-/* ---------- env var row ---------- */
+/* ---------- env var row (with product-term export-ref linking) ---------- */
 
 function EnvVarRow({
   envVar,
@@ -129,121 +121,101 @@ function EnvVarRow({
   addonDefinitions: AddonDefinition[];
 }) {
   const [showExportPicker, setShowExportPicker] = useState(false);
-
   const isLinked = !!envVar.export_ref;
-
-  const brokenRef =
-    isLinked && !addonComponents.some((c) => c.name === envVar.export_ref!.component);
+  const brokenRef = isLinked && !addonComponents.some((c) => c.name === envVar.export_ref!.component);
 
   return (
     <div className="flex items-start gap-2 group">
       <div className="flex-1 min-w-0">
-        <Input
+        <TInput
           placeholder="KEY"
           value={envVar.name}
           onChange={(e) => onUpdate(index, { ...envVar, name: e.target.value })}
-          className="font-mono text-xs h-8"
+          className="font-mono"
         />
       </div>
       <div className="flex-1 min-w-0 relative">
         {isLinked ? (
           <div
-            className={`h-8 px-3 rounded-md border text-xs flex items-center gap-1.5 ${
+            className="h-8 px-2.5 rounded-md border text-[12px] flex items-center gap-1.5"
+            style={
               brokenRef
-                ? 'border-amber-300 bg-amber-50 text-amber-700'
-                : 'border-blue-200 bg-blue-50 text-blue-700'
-            }`}
+                ? { background: 'var(--warn-soft)', borderColor: 'var(--warn)', color: 'var(--warn)' }
+                : { background: 'var(--accent-soft)', borderColor: 'var(--accent)', color: 'var(--accent)' }
+            }
           >
-            {brokenRef ? (
-              <AlertTriangle className="h-3 w-3 shrink-0" />
-            ) : (
-              <Link2 className="h-3 w-3 shrink-0" />
-            )}
+            {brokenRef ? <AlertTriangle className="h-3 w-3 shrink-0" /> : <Link2 className="h-3 w-3 shrink-0" />}
             <span className="truncate">
-              {envVar.export_ref!.component}.{envVar.export_ref!.export_key}
+              {envVar.export_ref!.export_key} from component {envVar.export_ref!.component}
             </span>
             <button
               type="button"
-              onClick={() =>
-                onUpdate(index, {
-                  name: envVar.name,
-                  value: '',
-                  export_ref: undefined,
-                })
-              }
-              className="ml-auto shrink-0 hover:text-blue-900"
+              onClick={() => onUpdate(index, { name: envVar.name, value: '', export_ref: undefined })}
+              className="ml-auto shrink-0 hover:opacity-70"
             >
               <X className="h-3 w-3" />
             </button>
           </div>
         ) : (
-          <Input
+          <TInput
             placeholder="value"
             value={envVar.value ?? ''}
-            onChange={(e) =>
-              onUpdate(index, { ...envVar, value: e.target.value })
-            }
-            className="font-mono text-xs h-8"
+            onChange={(e) => onUpdate(index, { ...envVar, value: e.target.value })}
+            className="font-mono"
           />
         )}
       </div>
 
-      {/* Link to component button */}
       {!isLinked && addonComponents.length > 0 && (
         <div className="relative">
           <button
             type="button"
             onClick={() => setShowExportPicker(!showExportPicker)}
-            className="h-8 w-8 rounded-md border border-zinc-200 flex items-center justify-center text-zinc-400 hover:text-zinc-600 hover:border-zinc-300 transition-colors"
-            title="Link to component"
+            className="h-8 w-8 rounded-md border flex items-center justify-center hover:opacity-80"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-3)' }}
+            title="Use a value exported by another component"
           >
             <Link2 className="h-3.5 w-3.5" />
           </button>
 
-          {/* Export picker dropdown */}
           {showExportPicker && (
-            <div className="absolute right-0 top-9 z-20 w-72 rounded-lg border border-zinc-200 bg-white shadow-lg py-1 max-h-64 overflow-y-auto">
-              <p className="px-3 py-1.5 text-[11px] font-medium text-zinc-400 uppercase tracking-wider">
-                Link to component export
-              </p>
-              {addonComponents.map((comp) => {
-                const def = addonDefinitions.find(
-                  (d) => d.id === comp.addon?.definitionId
-                );
-                const exports = def?.export_schema;
-                if (!exports || Object.keys(exports).length === 0) return null;
-                return (
-                  <div key={comp.id}>
-                    <p className="px-3 py-1 text-xs font-medium text-zinc-700 bg-zinc-50">
-                      {comp.name}{' '}
-                      <span className="text-zinc-400">({def?.name})</span>
-                    </p>
-                    {Object.entries(exports).map(([key, schema]) => (
-                      <button
-                        key={key}
-                        type="button"
-                        className="w-full px-3 py-1.5 text-left text-xs hover:bg-zinc-50 flex items-center justify-between"
-                        onClick={() => {
-                          onUpdate(index, {
-                            name: envVar.name || key,
-                            export_ref: {
-                              component: comp.name,
-                              export_key: key,
-                            },
-                          });
-                          setShowExportPicker(false);
-                        }}
-                      >
-                        <span className="font-mono">{key}</span>
-                        <span className="text-zinc-400 truncate ml-2">
-                          {schema.description}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowExportPicker(false)} />
+              <div
+                className="absolute right-0 top-9 z-20 w-72 rounded-lg border py-1 max-h-64 overflow-y-auto anim-slide-up"
+                style={{ background: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--shadow-pop)' }}
+              >
+                <p className="px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-4)' }}>
+                  Use a value exported by a component
+                </p>
+                {addonComponents.map((comp) => {
+                  const def = addonDefinitions.find((d) => d.id === comp.addon?.definitionId);
+                  const exports = def?.export_schema;
+                  if (!exports || Object.keys(exports).length === 0) return null;
+                  return (
+                    <div key={comp.id}>
+                      <p className="px-3 py-1 text-[11.5px] font-medium" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>
+                        {comp.name} <span style={{ color: 'var(--text-4)' }}>({def?.name})</span>
+                      </p>
+                      {Object.entries(exports).map(([key, schema]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[var(--surface-2)] flex items-center justify-between"
+                          onClick={() => {
+                            onUpdate(index, { name: envVar.name || key, export_ref: { component: comp.name, export_key: key } });
+                            setShowExportPicker(false);
+                          }}
+                        >
+                          <span className="font-mono" style={{ color: 'var(--text)' }}>{key}</span>
+                          <span className="truncate ml-2" style={{ color: 'var(--text-4)' }}>{schema.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       )}
@@ -251,7 +223,9 @@ function EnvVarRow({
       <button
         type="button"
         onClick={() => onRemove(index)}
-        className="h-8 w-8 rounded-md flex items-center justify-center text-zinc-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+        className="h-8 w-8 rounded-md flex items-center justify-center hover:text-[var(--err)] opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ color: 'var(--text-4)' }}
+        aria-label="Remove env var"
       >
         <X className="h-3.5 w-3.5" />
       </button>
@@ -260,6 +234,45 @@ function EnvVarRow({
 }
 
 /* ---------- workload component card ---------- */
+
+function ComponentCardShell({
+  collapsed,
+  onToggleCollapse,
+  onRemove,
+  iconBg,
+  icon,
+  title,
+  subtitle,
+  children,
+}: {
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  onRemove: () => void;
+  iconBg: string;
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card flush className="overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-2.5" style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
+        <span className="w-7 h-7 rounded-md flex items-center justify-center shrink-0" style={{ background: iconBg }}>{icon}</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-[12.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{title}</p>
+          <p className="text-[10.5px]" style={{ color: 'var(--text-4)' }}>{subtitle}</p>
+        </div>
+        <button type="button" onClick={onToggleCollapse} className="hover:opacity-70" style={{ color: 'var(--text-3)' }}>
+          {collapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+        </button>
+        <button type="button" onClick={onRemove} className="hover:text-[var(--err)]" style={{ color: 'var(--text-4)' }}>
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+      {!collapsed && <div className="px-4 py-4 space-y-4">{children}</div>}
+    </Card>
+  );
+}
 
 function WorkloadCard({
   component,
@@ -277,271 +290,117 @@ function WorkloadCard({
   addonDefinitions: AddonDefinition[];
 }) {
   const w = component.workload!;
-
-  const updateWorkload = (patch: Partial<WorkloadFormData>) => {
-    onUpdate({ ...component, workload: { ...w, ...patch } });
-  };
-
-  const updateName = (name: string) => {
-    onUpdate({ ...component, name });
-  };
-
+  const updateWorkload = (patch: Partial<WorkloadFormData>) => onUpdate({ ...component, workload: { ...w, ...patch } });
+  const updateName = (name: string) => onUpdate({ ...component, name });
   const updateEnv = (index: number, env: AppEnvVar) => {
     const next = [...w.env];
     next[index] = env;
     updateWorkload({ env: next });
   };
+  const removeEnv = (index: number) => updateWorkload({ env: w.env.filter((_, i) => i !== index) });
+  const addEnv = () => updateWorkload({ env: [...w.env, { name: '', value: '' }] });
+  const nameError = component.name.length > 0 && !k8sNameRegex.test(component.name);
 
-  const removeEnv = (index: number) => {
-    updateWorkload({ env: w.env.filter((_, i) => i !== index) });
+  const kindBtn = (kind: WorkloadKind, label: string, onClick: () => void) => {
+    const on = w.kind === kind;
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        style={{ background: on ? 'var(--accent)' : 'var(--surface-2)', color: on ? 'var(--on-accent)' : 'var(--text-2)' }}
+        className="px-2.5 h-7 rounded-md text-[12px] font-medium transition-colors hover:opacity-90"
+      >
+        {label}
+      </button>
+    );
   };
-
-  const addEnv = () => {
-    updateWorkload({ env: [...w.env, { name: '', value: '' }] });
-  };
-
-  const nameError =
-    component.name.length > 0 && !k8sNameRegex.test(component.name);
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 bg-zinc-50 border-b border-zinc-100">
-        <div className="w-7 h-7 rounded-md bg-blue-100 flex items-center justify-center">
-          {w.kind === 'web-service' ? (
-            <Globe className="h-3.5 w-3.5 text-blue-600" />
-          ) : (
-            <Cog className="h-3.5 w-3.5 text-blue-600" />
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-zinc-900">
-            {component.name || 'Unnamed workload'}
-          </p>
-          <p className="text-[11px] text-zinc-400">
-            {w.kind === 'web-service' ? 'Web Service' : 'Worker'}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onToggleCollapse}
-          className="text-zinc-400 hover:text-zinc-600 transition-colors"
-        >
-          {component.collapsed ? (
-            <ChevronDown className="h-4 w-4" />
-          ) : (
-            <ChevronUp className="h-4 w-4" />
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={onRemove}
-          className="text-zinc-300 hover:text-red-500 transition-colors"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
+    <ComponentCardShell
+      collapsed={component.collapsed}
+      onToggleCollapse={onToggleCollapse}
+      onRemove={onRemove}
+      iconBg="var(--accent-soft)"
+      icon={w.kind === 'web-service' ? <Globe className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} /> : <Cog className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />}
+      title={component.name || 'Unnamed workload'}
+      subtitle={w.kind === 'web-service' ? 'Web service' : 'Worker'}
+    >
+      <div>
+        <FieldLabel required>Component name</FieldLabel>
+        <TInput placeholder="api" value={component.name} onChange={(e) => updateName(e.target.value)} />
+        {nameError && <p className="text-[11px] mt-1" style={{ color: 'var(--err)' }}>Lowercase letters, numbers, and hyphens only</p>}
       </div>
 
-      {/* Body */}
-      <AnimatePresence>
-        {!component.collapsed && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
-            <div className="px-4 py-4 space-y-4">
-              {/* Name */}
-              <div>
-                <label className="text-xs font-medium text-zinc-600 mb-1 block">
-                  Component Name <span className="text-destructive">*</span>
-                </label>
-                <Input
-                  placeholder="api"
-                  value={component.name}
-                  onChange={(e) => updateName(e.target.value)}
-                  className="text-sm h-8"
-                />
-                {nameError && (
-                  <p className="text-xs text-destructive mt-1">
-                    Lowercase letters, numbers, and hyphens only
-                  </p>
-                )}
+      <div>
+        <FieldLabel>Type</FieldLabel>
+        <div className="flex gap-2">
+          {kindBtn('web-service', 'Web service', () => updateWorkload({ kind: 'web-service', port: w.port ?? 8080 }))}
+          {kindBtn('worker', 'Worker', () => updateWorkload({ kind: 'worker', port: null, ingressEnabled: false, ingressHost: '' }))}
+        </div>
+      </div>
+
+      <div>
+        <FieldLabel required>Image</FieldLabel>
+        <TInput placeholder="myapp:latest" value={w.image} onChange={(e) => updateWorkload({ image: e.target.value })} />
+      </div>
+
+      <div className="flex gap-4">
+        {w.kind === 'web-service' && (
+          <div className="w-24">
+            <FieldLabel>Port</FieldLabel>
+            <TInput type="number" placeholder="8080" value={w.port ?? ''} onChange={(e) => updateWorkload({ port: e.target.value ? Number(e.target.value) : null })} />
+          </div>
+        )}
+        <div className="w-24">
+          <FieldLabel>Replicas</FieldLabel>
+          <TInput type="number" min={1} max={10} value={w.replicas} onChange={(e) => updateWorkload({ replicas: Number(e.target.value) || 1 })} />
+        </div>
+      </div>
+
+      {w.kind === 'web-service' && (
+        <div>
+          {!w.ingressEnabled ? (
+            <button type="button" onClick={() => updateWorkload({ ingressEnabled: true })} className="text-[12px] flex items-center gap-1 hover:text-[var(--text)]" style={{ color: 'var(--text-3)' }}>
+              <Plus className="h-3 w-3" /> Add a custom domain
+            </button>
+          ) : (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <FieldLabel>Domain</FieldLabel>
+                <button type="button" onClick={() => updateWorkload({ ingressEnabled: false, ingressHost: '' })} className="hover:opacity-70" style={{ color: 'var(--text-3)' }}>
+                  <X className="h-3 w-3" />
+                </button>
               </div>
-
-              {/* Kind toggle */}
-              <div>
-                <label className="text-xs font-medium text-zinc-600 mb-1 block">
-                  Type
-                </label>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => updateWorkload({ kind: 'web-service', port: w.port ?? 8080 })}
-                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                      w.kind === 'web-service'
-                        ? 'bg-zinc-900 text-white'
-                        : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-                    }`}
-                  >
-                    Web Service
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      updateWorkload({
-                        kind: 'worker',
-                        port: null,
-                        ingressEnabled: false,
-                        ingressHost: '',
-                      })
-                    }
-                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                      w.kind === 'worker'
-                        ? 'bg-zinc-900 text-white'
-                        : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-                    }`}
-                  >
-                    Worker
-                  </button>
-                </div>
-              </div>
-
-              {/* Image */}
-              <div>
-                <label className="text-xs font-medium text-zinc-600 mb-1 block">
-                  Image <span className="text-destructive">*</span>
-                </label>
-                <Input
-                  placeholder="myapp:latest"
-                  value={w.image}
-                  onChange={(e) => updateWorkload({ image: e.target.value })}
-                  className="text-sm h-8"
-                />
-              </div>
-
-              {/* Port + Replicas row */}
-              <div className="flex gap-4">
-                {w.kind === 'web-service' && (
-                  <div className="w-24">
-                    <label className="text-xs font-medium text-zinc-600 mb-1 block">
-                      Port
-                    </label>
-                    <Input
-                      type="number"
-                      placeholder="8080"
-                      value={w.port ?? ''}
-                      onChange={(e) =>
-                        updateWorkload({
-                          port: e.target.value ? Number(e.target.value) : null,
-                        })
-                      }
-                      className="text-sm h-8"
-                    />
-                  </div>
-                )}
-                <div className="w-24">
-                  <label className="text-xs font-medium text-zinc-600 mb-1 block">
-                    Replicas
-                  </label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={w.replicas}
-                    onChange={(e) =>
-                      updateWorkload({ replicas: Number(e.target.value) || 1 })
-                    }
-                    className="text-sm h-8"
-                  />
-                </div>
-              </div>
-
-              {/* Ingress (web service only) */}
-              {w.kind === 'web-service' && (
-                <div>
-                  {!w.ingressEnabled ? (
-                    <button
-                      type="button"
-                      onClick={() => updateWorkload({ ingressEnabled: true })}
-                      className="text-xs text-zinc-500 hover:text-zinc-900 flex items-center gap-1 transition-colors"
-                    >
-                      <Plus className="h-3 w-3" />
-                      Add custom domain
-                    </button>
-                  ) : (
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-xs font-medium text-zinc-600">
-                          Domain
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateWorkload({
-                              ingressEnabled: false,
-                              ingressHost: '',
-                            })
-                          }
-                          className="text-zinc-400 hover:text-zinc-600"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Globe className="h-3.5 w-3.5 text-zinc-400 shrink-0" />
-                        <Input
-                          placeholder="app.example.com"
-                          value={w.ingressHost}
-                          onChange={(e) =>
-                            updateWorkload({ ingressHost: e.target.value })
-                          }
-                          className="text-sm h-8"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Environment Variables */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-medium text-zinc-600">
-                    Environment Variables
-                  </label>
-                  <button
-                    type="button"
-                    onClick={addEnv}
-                    className="text-xs text-zinc-500 hover:text-zinc-900 flex items-center gap-1 transition-colors"
-                  >
-                    <Plus className="h-3 w-3" />
-                    Add
-                  </button>
-                </div>
-                {w.env.length > 0 && (
-                  <div className="space-y-2">
-                    {w.env.map((env, i) => (
-                      <EnvVarRow
-                        key={i}
-                        envVar={env}
-                        index={i}
-                        onUpdate={updateEnv}
-                        onRemove={removeEnv}
-                        addonComponents={addonComponents}
-                        addonDefinitions={addonDefinitions}
-                      />
-                    ))}
-                  </div>
-                )}
+              <div className="flex items-center gap-2">
+                <Globe className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--text-3)' }} />
+                <TInput placeholder="app.example.com" value={w.ingressHost} onChange={(e) => updateWorkload({ ingressHost: e.target.value })} />
               </div>
             </div>
-          </motion.div>
+          )}
+        </div>
+      )}
+
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <FieldLabel>Environment variables</FieldLabel>
+          <button type="button" onClick={addEnv} className="text-[12px] flex items-center gap-1 hover:text-[var(--text)]" style={{ color: 'var(--text-3)' }}>
+            <Plus className="h-3 w-3" /> Add
+          </button>
+        </div>
+        {w.env.length > 0 && (
+          <div className="space-y-2">
+            {w.env.map((env, i) => (
+              <EnvVarRow key={i} envVar={env} index={i} onUpdate={updateEnv} onRemove={removeEnv} addonComponents={addonComponents} addonDefinitions={addonDefinitions} />
+            ))}
+          </div>
         )}
-      </AnimatePresence>
-    </div>
+        {addonComponents.length > 0 && (
+          <p className="text-[10.5px] mt-2" style={{ color: 'var(--text-4)' }}>
+            Tip: click the link icon on a row to use a value exported by an addon component (e.g. <span className="font-mono">DATABASE_URL</span> from your postgres component).
+          </p>
+        )}
+      </div>
+    </ComponentCardShell>
   );
 }
 
@@ -562,121 +421,44 @@ function AddonCard({
 }) {
   const a = component.addon!;
   const def = addonDefinitions.find((d) => d.id === a.definitionId);
-
-  const updateName = (name: string) => {
-    onUpdate({ ...component, name });
-  };
-
-  const nameError =
-    component.name.length > 0 && !k8sNameRegex.test(component.name);
+  const updateName = (name: string) => onUpdate({ ...component, name });
+  const nameError = component.name.length > 0 && !k8sNameRegex.test(component.name);
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 bg-zinc-50 border-b border-zinc-100">
-        <div className="w-7 h-7 rounded-md bg-purple-100 flex items-center justify-center">
-          <Database className="h-3.5 w-3.5 text-purple-600" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-zinc-900">
-            {component.name || 'Unnamed addon'}
-          </p>
-          <p className="text-[11px] text-zinc-400">
-            {def?.name ?? a.addonType}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onToggleCollapse}
-          className="text-zinc-400 hover:text-zinc-600 transition-colors"
-        >
-          {component.collapsed ? (
-            <ChevronDown className="h-4 w-4" />
-          ) : (
-            <ChevronUp className="h-4 w-4" />
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={onRemove}
-          className="text-zinc-300 hover:text-red-500 transition-colors"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
+    <ComponentCardShell
+      collapsed={component.collapsed}
+      onToggleCollapse={onToggleCollapse}
+      onRemove={onRemove}
+      iconBg="rgba(139,92,246,0.14)"
+      icon={<Database className="h-3.5 w-3.5" style={{ color: '#8b5cf6' }} />}
+      title={component.name || 'Unnamed addon'}
+      subtitle={def?.name ?? a.addonType}
+    >
+      <div>
+        <FieldLabel required>Component name</FieldLabel>
+        <TInput placeholder="db" value={component.name} onChange={(e) => updateName(e.target.value)} />
+        {nameError && <p className="text-[11px] mt-1" style={{ color: 'var(--err)' }}>Lowercase letters, numbers, and hyphens only</p>}
       </div>
 
-      {/* Body */}
-      <AnimatePresence>
-        {!component.collapsed && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
-            <div className="px-4 py-4 space-y-4">
-              {/* Name */}
-              <div>
-                <label className="text-xs font-medium text-zinc-600 mb-1 block">
-                  Component Name <span className="text-destructive">*</span>
-                </label>
-                <Input
-                  placeholder="cache"
-                  value={component.name}
-                  onChange={(e) => updateName(e.target.value)}
-                  className="text-sm h-8"
-                />
-                {nameError && (
-                  <p className="text-xs text-destructive mt-1">
-                    Lowercase letters, numbers, and hyphens only
-                  </p>
-                )}
-              </div>
+      {def && (
+        <div className="rounded-md p-3" style={{ background: 'var(--surface-2)' }}>
+          <p className="text-[12px] font-medium" style={{ color: 'var(--text-2)' }}>{def.name}</p>
+          {def.description && <p className="text-[11.5px] mt-0.5" style={{ color: 'var(--text-3)' }}>{def.description}</p>}
+          {def.chart_config && <p className="text-[10.5px] mt-1 font-mono" style={{ color: 'var(--text-4)' }}>{def.chart_config.name}:{def.chart_config.version}</p>}
+        </div>
+      )}
 
-              {/* Info */}
-              {def && (
-                <div className="rounded-md bg-zinc-50 p-3">
-                  <p className="text-xs font-medium text-zinc-700">
-                    {def.name}
-                  </p>
-                  {def.description && (
-                    <p className="text-xs text-zinc-500 mt-0.5">
-                      {def.description}
-                    </p>
-                  )}
-                  {def.chart_config && (
-                    <p className="text-[11px] text-zinc-400 mt-1 font-mono">
-                      {def.chart_config.name}:{def.chart_config.version}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* Export schema preview */}
-              {def?.export_schema &&
-                Object.keys(def.export_schema).length > 0 && (
-                  <div>
-                    <p className="text-xs font-medium text-zinc-600 mb-1">
-                      Exports available to workloads
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      {Object.keys(def.export_schema).map((key) => (
-                        <span
-                          key={key}
-                          className="px-2 py-0.5 rounded bg-zinc-100 text-[11px] font-mono text-zinc-600"
-                        >
-                          {key}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+      {def?.export_schema && Object.keys(def.export_schema).length > 0 && (
+        <div>
+          <FieldLabel>Values this component exports to workloads</FieldLabel>
+          <div className="flex flex-wrap gap-1">
+            {Object.keys(def.export_schema).map((key) => (
+              <span key={key} className="px-2 py-0.5 rounded text-[10.5px] font-mono" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}>{key}</span>
+            ))}
+          </div>
+        </div>
+      )}
+    </ComponentCardShell>
   );
 }
 
@@ -692,35 +474,19 @@ function AddonPicker({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh]" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={onClose}>
       <div
-        className="absolute inset-0 bg-black/30"
-        onClick={onClose}
-      />
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        transition={{ duration: 0.15 }}
-        className="relative bg-white rounded-xl shadow-xl border border-zinc-200 w-full max-w-lg mx-4 max-h-[70vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+        className="rounded-xl border w-full max-w-lg mx-4 max-h-[70vh] flex flex-col anim-slide-up"
+        style={{ background: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--shadow-pop)' }}
       >
-        <div className="px-5 py-4 border-b border-zinc-100 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-zinc-900">
-            Add Addon from Catalog
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-zinc-400 hover:text-zinc-600"
-          >
-            <X className="h-4 w-4" />
-          </button>
+        <div className="px-5 py-3.5 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+          <h3 className="text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>Add an addon from the catalog</h3>
+          <button type="button" onClick={onClose} className="hover:opacity-70" style={{ color: 'var(--text-3)' }}><X className="h-4 w-4" /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-4">
           {definitions.length === 0 ? (
-            <p className="text-sm text-zinc-500 text-center py-8">
-              No addon definitions available
-            </p>
+            <p className="text-[12.5px] text-center py-8" style={{ color: 'var(--text-3)' }}>No addon definitions available in this cluster.</p>
           ) : (
             <div className="grid grid-cols-2 gap-3">
               {definitions.map((def) => (
@@ -728,19 +494,14 @@ function AddonPicker({
                   key={def.id}
                   type="button"
                   onClick={() => onSelect(def)}
-                  className="p-4 rounded-lg border border-zinc-200 text-left hover:border-zinc-400 hover:bg-zinc-50 transition-all group"
+                  className="p-3.5 rounded-lg border text-left hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)] transition-all"
+                  style={{ borderColor: 'var(--border)' }}
                 >
                   <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-md bg-purple-100 flex items-center justify-center text-lg shrink-0">
-                      {def.icon || '📦'}
-                    </div>
+                    <span className="w-8 h-8 rounded-md flex items-center justify-center text-lg shrink-0" style={{ background: 'rgba(139,92,246,0.14)' }}>{def.icon || '📦'}</span>
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-zinc-900 group-hover:text-zinc-700">
-                        {def.name}
-                      </p>
-                      <p className="text-[11px] text-zinc-400 mt-0.5 line-clamp-2">
-                        {def.description ?? def.type}
-                      </p>
+                      <p className="text-[12.5px] font-medium" style={{ color: 'var(--text)' }}>{def.name}</p>
+                      <p className="text-[10.5px] mt-0.5 line-clamp-2" style={{ color: 'var(--text-4)' }}>{def.description ?? def.type}</p>
                     </div>
                   </div>
                 </button>
@@ -748,81 +509,90 @@ function AddonPicker({
             </div>
           )}
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }
 
 /* ---------- add component button ---------- */
 
-function AddComponentButton({
-  onAddWorkload,
-  onAddAddon,
-}: {
-  onAddWorkload: () => void;
-  onAddAddon: () => void;
-}) {
+function AddComponentButton({ onAddWorkload, onAddAddon }: { onAddWorkload: () => void; onAddAddon: () => void }) {
   const [open, setOpen] = useState(false);
-
   return (
     <div className="relative">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 border-dashed border-zinc-200 text-sm text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 transition-colors w-full justify-center"
+        className="flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 border-dashed text-[12.5px] hover:opacity-80 w-full justify-center"
+        style={{ borderColor: 'var(--border)', color: 'var(--text-3)' }}
       >
-        <Plus className="h-4 w-4" />
-        Add Component
+        <Plus className="h-4 w-4" /> Add a component
       </button>
-
       {open && (
         <>
-          <div
-            className="fixed inset-0 z-10"
-            onClick={() => setOpen(false)}
-          />
-          <div className="absolute top-full left-0 right-0 mt-1 z-20 bg-white rounded-lg border border-zinc-200 shadow-lg overflow-hidden">
-            <button
-              type="button"
-              onClick={() => {
-                onAddWorkload();
-                setOpen(false);
-              }}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-50 transition-colors text-left"
-            >
-              <div className="w-8 h-8 rounded-md bg-blue-100 flex items-center justify-center">
-                <Server className="h-4 w-4 text-blue-600" />
-              </div>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute top-full left-0 right-0 mt-1 z-20 rounded-lg border overflow-hidden anim-slide-up" style={{ background: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--shadow-pop)' }}>
+            <button type="button" onClick={() => { onAddWorkload(); setOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface-2)] text-left">
+              <span className="w-8 h-8 rounded-md flex items-center justify-center" style={{ background: 'var(--accent-soft)' }}><Server className="h-4 w-4" style={{ color: 'var(--accent)' }} /></span>
               <div>
-                <p className="text-sm font-medium text-zinc-900">Workload</p>
-                <p className="text-[11px] text-zinc-400">
-                  Web service or background worker
-                </p>
+                <p className="text-[12.5px] font-medium" style={{ color: 'var(--text)' }}>Workload</p>
+                <p className="text-[10.5px]" style={{ color: 'var(--text-4)' }}>Web service or background worker</p>
               </div>
             </button>
-            <div className="border-t border-zinc-100" />
-            <button
-              type="button"
-              onClick={() => {
-                onAddAddon();
-                setOpen(false);
-              }}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-50 transition-colors text-left"
-            >
-              <div className="w-8 h-8 rounded-md bg-purple-100 flex items-center justify-center">
-                <Database className="h-4 w-4 text-purple-600" />
-              </div>
+            <div style={{ borderTop: '1px solid var(--border)' }} />
+            <button type="button" onClick={() => { onAddAddon(); setOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[var(--surface-2)] text-left">
+              <span className="w-8 h-8 rounded-md flex items-center justify-center" style={{ background: 'rgba(139,92,246,0.14)' }}><Database className="h-4 w-4" style={{ color: '#8b5cf6' }} /></span>
               <div>
-                <p className="text-sm font-medium text-zinc-900">Addon</p>
-                <p className="text-[11px] text-zinc-400">
-                  Database, cache, or message queue
-                </p>
+                <p className="text-[12.5px] font-medium" style={{ color: 'var(--text)' }}>Addon</p>
+                <p className="text-[10.5px]" style={{ color: 'var(--text-4)' }}>Database, cache, or message queue</p>
               </div>
             </button>
           </div>
         </>
       )}
     </div>
+  );
+}
+
+/* ---------- from-template strip ---------- */
+
+function TemplateStrip({ projectId }: { projectId: string }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['stack-templates', 'all'],
+    queryFn: () => stackTemplatesApi.list(),
+  });
+  const templates = data?.data ?? [];
+  if (isLoading || templates.length === 0) return null;
+
+  const deployHref = (ns: string, name: string) => `/stacks/deploy?ns=${encodeURIComponent(ns)}&name=${encodeURIComponent(name)}${projectId ? `&project_id=${encodeURIComponent(projectId)}` : ''}`;
+
+  return (
+    <Card flush className="overflow-hidden">
+      <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+        <div>
+          <div className="text-[13px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--text)' }}><Layers className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} /> Start from a template</div>
+          <div className="text-[11.5px] mt-0.5" style={{ color: 'var(--text-3)' }}>Pick a pre-built stack, answer its parameters, and deploy in one click.</div>
+        </div>
+        <Link href="/settings/stack-templates" className="text-[12px] hover:text-[var(--text)]" style={{ color: 'var(--text-3)' }}>Browse all →</Link>
+      </div>
+      <div className="p-3 grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+        {templates.slice(0, 6).map((t) => (
+          <Link
+            key={`${t.namespace}/${t.name}`}
+            href={deployHref(t.namespace, t.name)}
+            className="rounded-lg border p-3 hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)] transition-all"
+            style={{ borderColor: 'var(--border)' }}
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-base">{t.icon || '📦'}</span>
+              <span className="text-[12.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{t.name}</span>
+              <span className="text-[10px] ml-auto font-mono" style={{ color: 'var(--text-4)' }}>v{t.version}</span>
+            </div>
+            {t.description && <p className="text-[10.5px] mt-1 line-clamp-2" style={{ color: 'var(--text-4)' }}>{t.description}</p>}
+          </Link>
+        ))}
+      </div>
+    </Card>
   );
 }
 
@@ -835,7 +605,7 @@ function genId() {
 
 export default function NewAppPage() {
   return (
-    <Suspense fallback={<div className="px-8 py-8 text-sm text-zinc-500">Loading…</div>}>
+    <Suspense fallback={<div className="px-6 py-8 text-[13px]" style={{ color: 'var(--text-3)' }}>Loading…</div>}>
       <NewAppPageInner />
     </Suspense>
   );
@@ -847,27 +617,14 @@ function NewAppPageInner() {
   const createApp = useCreateApp();
 
   const [appName, setAppName] = useState('');
-  const [selectedProjectId, setSelectedProjectId] = useState(
-    search.get('project_id') ?? '',
-  );
+  const [selectedProjectId, setSelectedProjectId] = useState(search.get('project_id') ?? '');
   const [components, setComponents] = useState<ComponentEntry[]>([]);
   const [deployed, setDeployed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAddonPicker, setShowAddonPicker] = useState(false);
 
-  /* data fetching */
-  const { data: projectsData } = useQuery({
-    queryKey: ['projects'],
-    queryFn: () => getAllProjects(),
-  });
+  const { data: projectsData } = useQuery({ queryKey: ['projects'], queryFn: () => getAllProjects() });
   const projects = projectsData?.data ?? [];
-
-  // Preselect project from query param once projects load.
-  useEffect(() => {
-    const fromUrl = search.get('project_id');
-    if (!fromUrl || selectedProjectId) return;
-    if (projects.some((p) => p.id === fromUrl)) setSelectedProjectId(fromUrl);
-  }, [projects, search, selectedProjectId]);
 
   const { data: addonDefsData } = useQuery({
     queryKey: ['addon-definitions'],
@@ -875,13 +632,8 @@ function NewAppPageInner() {
   });
   const addonDefinitions = addonDefsData?.data ?? [];
 
-  /* derived */
-  const addonComponents = useMemo(
-    () => components.filter((c) => c.type === 'addon'),
-    [components]
-  );
+  const addonComponents = useMemo(() => components.filter((c) => c.type === 'addon'), [components]);
 
-  /* component CRUD */
   const addWorkload = useCallback(() => {
     setComponents((prev) => [
       ...prev,
@@ -889,15 +641,7 @@ function NewAppPageInner() {
         id: genId(),
         name: '',
         type: 'workload',
-        workload: {
-          image: '',
-          replicas: 1,
-          port: 8080,
-          ingressEnabled: false,
-          ingressHost: '',
-          env: [],
-          kind: 'web-service',
-        },
+        workload: { image: '', replicas: 1, port: 8080, ingressEnabled: false, ingressHost: '', env: [], kind: 'web-service' },
         collapsed: false,
       },
     ]);
@@ -922,110 +666,50 @@ function NewAppPageInner() {
     setShowAddonPicker(false);
   }, []);
 
-  const updateComponent = useCallback(
-    (id: string, updated: ComponentEntry) => {
-      setComponents((prev) =>
-        prev.map((c) => (c.id === id ? updated : c))
-      );
-    },
-    []
-  );
-
-  const removeComponent = useCallback((id: string) => {
-    setComponents((prev) => prev.filter((c) => c.id !== id));
+  const updateComponent = useCallback((id: string, updated: ComponentEntry) => {
+    setComponents((prev) => prev.map((c) => (c.id === id ? updated : c)));
   }, []);
-
+  const removeComponent = useCallback((id: string) => setComponents((prev) => prev.filter((c) => c.id !== id)), []);
   const toggleCollapse = useCallback((id: string) => {
-    setComponents((prev) =>
-      prev.map((c) =>
-        c.id === id ? { ...c, collapsed: !c.collapsed } : c
-      )
-    );
+    setComponents((prev) => prev.map((c) => (c.id === id ? { ...c, collapsed: !c.collapsed } : c)));
   }, []);
 
-  /* build depends_on from export_refs */
   const buildDependsOn = (comp: ComponentEntry): string[] => {
     if (comp.type !== 'workload' || !comp.workload) return [];
     const deps = new Set<string>();
     for (const env of comp.workload.env) {
-      if (env.export_ref?.component) {
-        deps.add(env.export_ref.component);
-      }
+      if (env.export_ref?.component) deps.add(env.export_ref.component);
     }
     return Array.from(deps);
   };
 
-  /* submit */
   const handleDeploy = async () => {
     setError(null);
 
-    // validation
-    if (!appName.trim()) {
-      setError('App name is required');
-      return;
-    }
-    if (!k8sNameRegex.test(appName)) {
-      setError(
-        'App name must be lowercase letters, numbers, and hyphens only'
-      );
-      return;
-    }
-    if (!selectedProjectId) {
-      setError('Please select a project');
-      return;
-    }
-    if (components.length === 0) {
-      setError('Add at least one component');
-      return;
-    }
+    if (!appName.trim()) return setError('App name is required');
+    if (!k8sNameRegex.test(appName)) return setError('App name must be lowercase letters, numbers, and hyphens only');
+    if (!selectedProjectId) return setError('Please select a project');
+    if (components.length === 0) return setError('Add at least one component');
 
-    // check all components have names
     const unnamed = components.find((c) => !c.name.trim());
-    if (unnamed) {
-      setError('All components must have a name');
-      return;
-    }
+    if (unnamed) return setError('All components must have a name');
 
-    // check name validity
-    const badName = components.find(
-      (c) => !k8sNameRegex.test(c.name)
-    );
-    if (badName) {
-      setError(
-        `Component "${badName.name}" has an invalid name. Use lowercase letters, numbers, and hyphens.`
-      );
-      return;
-    }
+    const badName = components.find((c) => !k8sNameRegex.test(c.name));
+    if (badName) return setError(`Component "${badName.name}" has an invalid name. Use lowercase letters, numbers, and hyphens.`);
 
-    // check duplicate names
     const names = components.map((c) => c.name);
     const dupes = names.filter((n, i) => names.indexOf(n) !== i);
-    if (dupes.length > 0) {
-      setError(`Duplicate component name: "${dupes[0]}"`);
-      return;
-    }
+    if (dupes.length > 0) return setError(`Duplicate component name: "${dupes[0]}"`);
 
-    // check workloads have images
-    const noImage = components.find(
-      (c) => c.type === 'workload' && !c.workload?.image.trim()
-    );
-    if (noImage) {
-      setError(`Workload "${noImage.name}" needs a container image`);
-      return;
-    }
+    const noImage = components.find((c) => c.type === 'workload' && !c.workload?.image.trim());
+    if (noImage) return setError(`Workload "${noImage.name}" needs a container image`);
 
-    // build payload
     const appComponents: AppComponent[] = components.map((c) => {
       if (c.type === 'workload') {
         const w = c.workload!;
         const envVars: AppEnvVar[] = w.env
           .filter((e) => e.name.trim())
-          .map((e) =>
-            e.export_ref
-              ? { name: e.name, export_ref: e.export_ref }
-              : { name: e.name, value: e.value ?? '' }
-          );
-
+          .map((e) => (e.export_ref ? { name: e.name, export_ref: e.export_ref } : { name: e.name, value: e.value ?? '' }));
         return {
           name: c.name,
           type: 'workload' as const,
@@ -1035,68 +719,43 @@ function NewAppPageInner() {
             replicas: w.replicas,
             port: w.kind === 'web-service' ? w.port : undefined,
             env: envVars.length > 0 ? envVars : undefined,
-            ingress:
-              w.kind === 'web-service' && w.ingressEnabled && w.ingressHost
-                ? {
-                    enabled: true,
-                    host: w.ingressHost,
-                    path: '/',
-                  }
-                : undefined,
-          },
-        };
-      } else {
-        const a = c.addon!;
-        return {
-          name: c.name,
-          type: 'addon' as const,
-          addon_spec: {
-            type: a.addonType as any,
-            chart: a.chart,
-            values:
-              Object.keys(a.values).length > 0 ? a.values : undefined,
+            ingress: w.kind === 'web-service' && w.ingressEnabled && w.ingressHost ? { enabled: true, host: w.ingressHost, path: '/' } : undefined,
           },
         };
       }
+      const a = c.addon!;
+      return {
+        name: c.name,
+        type: 'addon' as const,
+        addon_spec: {
+          type: a.addonType as AddonType,
+          chart: a.chart,
+          values: Object.keys(a.values).length > 0 ? a.values : undefined,
+        },
+      };
     });
 
     try {
-      await createApp.mutateAsync({
-        name: appName,
-        project_id: selectedProjectId,
-        components: appComponents,
-      });
+      await createApp.mutateAsync({ name: appName, project_id: selectedProjectId, components: appComponents });
       setDeployed(true);
-      setTimeout(() => {
-        router.push('/apps');
-      }, 1500);
+      setTimeout(() => router.push('/apps'), 1500);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Failed to create app'
-      );
+      setError(err instanceof Error ? err.message : 'Failed to create app');
     }
   };
 
-  /* success state */
   if (deployed) {
     return (
-      <div className="px-8 py-8 max-w-3xl mx-auto flex items-center justify-center min-h-[60vh]">
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ duration: 0.4, ease: easeOutQuart }}
-          className="text-center space-y-4"
-        >
-          <div className="mx-auto w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center">
-            <Check className="h-8 w-8 text-emerald-600" />
+      <div className="px-6 py-8 max-w-[640px] mx-auto flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-3 anim-slide-up">
+          <div className="mx-auto w-14 h-14 rounded-full flex items-center justify-center" style={{ background: 'var(--ok-soft)' }}>
+            <Check className="h-7 w-7" style={{ color: 'var(--ok)' }} />
           </div>
-          <h2 className="text-2xl font-bold text-zinc-900">App Deployed</h2>
-          <p className="text-zinc-500">
-            <span className="font-mono text-zinc-700">{appName}</span> is being
-            deployed with {components.length} component
-            {components.length !== 1 ? 's' : ''}.
+          <h2 className="text-[20px] font-semibold" style={{ color: 'var(--text)' }}>App created</h2>
+          <p className="text-[13px]" style={{ color: 'var(--text-3)' }}>
+            <span className="font-mono" style={{ color: 'var(--text-2)' }}>{appName}</span> is deploying with {components.length} component{components.length !== 1 ? 's' : ''}.
           </p>
-        </motion.div>
+        </div>
       </div>
     );
   }
@@ -1104,189 +763,89 @@ function NewAppPageInner() {
   const appNameError = appName.length > 0 && !k8sNameRegex.test(appName);
 
   return (
-    <div className="px-8 py-8 max-w-3xl mx-auto space-y-6">
-      {/* Breadcrumb */}
-      <motion.div
-        variants={fadeInUp}
-        initial="initial"
-        animate="animate"
-        transition={{ duration: 0.3, ease: easeOutQuart }}
-      >
-        <Button
-          variant="ghost"
-          size="sm"
-          asChild
-          className="h-7 px-2 text-zinc-400 hover:text-zinc-700 -ml-2"
-        >
-          <Link href="/apps">
-            <ArrowLeft className="h-3.5 w-3.5 mr-1.5" />
-            Apps
-          </Link>
-        </Button>
-      </motion.div>
+    <div className="px-6 py-5 max-w-[760px] mx-auto space-y-4">
+      <Link href="/apps" className="inline-flex items-center gap-1.5 text-[12.5px] hover:text-[var(--text)]" style={{ color: 'var(--text-3)' }}>
+        <ArrowLeft size={13} /> Apps
+      </Link>
 
-      {/* Header */}
-      <motion.div
-        variants={fadeInUp}
-        initial="initial"
-        animate="animate"
-        transition={{ duration: 0.4, delay: 0.05, ease: easeOutQuart }}
-      >
-        <h1 className="text-2xl font-bold tracking-tight text-zinc-900">
-          Create App
-        </h1>
-        <p className="text-sm text-zinc-500 mt-1">
-          Define your app with workloads and addons. Everything deploys together.
+      <div>
+        <h1 className="text-[22px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>Create an app</h1>
+        <p className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+          Define workloads and addons; they deploy together. Everything stays in product terms — images, env vars, replicas, domains — never raw Kubernetes resources.
         </p>
-      </motion.div>
+      </div>
 
-      {/* Form */}
-      <motion.div
-        variants={fadeInUp}
-        initial="initial"
-        animate="animate"
-        transition={{ duration: 0.4, delay: 0.1, ease: easeOutQuart }}
-      >
-        <div className="rounded-lg border border-zinc-200 bg-white">
-          {/* App Name */}
-          <div className="px-6">
-            <FormRow
-              label="App Name"
-              description="A unique name for your app. Lowercase letters, numbers, and hyphens only."
-              required
-            >
-              <Input
-                placeholder="my-app"
-                value={appName}
-                onChange={(e) => setAppName(e.target.value)}
-                disabled={createApp.isPending}
-              />
-              {appNameError && (
-                <p className="text-sm text-destructive mt-1">
-                  Lowercase letters, numbers, and hyphens only
-                </p>
-              )}
-            </FormRow>
+      <TemplateStrip projectId={selectedProjectId} />
+
+      <Card flush>
+        <div className="px-5 py-4 grid sm:grid-cols-2 gap-4" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div>
+            <FieldLabel required>App name</FieldLabel>
+            <TInput placeholder="my-app" value={appName} onChange={(e) => setAppName(e.target.value)} disabled={createApp.isPending} />
+            <p className="text-[10.5px] mt-1" style={{ color: 'var(--text-4)' }}>Lowercase letters, numbers, and hyphens only.</p>
+            {appNameError && <p className="text-[11px] mt-1" style={{ color: 'var(--err)' }}>Lowercase letters, numbers, and hyphens only</p>}
           </div>
-
-          <SectionDivider />
-
-          {/* Project selector */}
-          <div className="px-6">
-            <FormRow
-              label="Project"
-              description="The project this app belongs to. Determines the cluster and namespace."
-              required
-            >
-              <select
-                value={selectedProjectId}
-                onChange={(e) => setSelectedProjectId(e.target.value)}
-                disabled={createApp.isPending}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="">Select a project...</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.display_name || p.name} ({p.namespace})
-                  </option>
-                ))}
-              </select>
-            </FormRow>
-          </div>
-
-          <SectionDivider />
-
-          {/* Components */}
-          <div className="px-6 py-5">
-            <div className="mb-4">
-              <p className="text-sm font-medium text-zinc-900">Components</p>
-              <p className="text-xs text-zinc-500 mt-0.5">
-                Add workloads (web services, workers) and addons (databases,
-                caches) that make up your app.
-              </p>
-            </div>
-
-            {components.length > 0 && (
-              <div className="space-y-3 mb-4">
-                {components.map((comp) =>
-                  comp.type === 'workload' ? (
-                    <WorkloadCard
-                      key={comp.id}
-                      component={comp}
-                      onUpdate={(updated) =>
-                        updateComponent(comp.id, updated)
-                      }
-                      onRemove={() => removeComponent(comp.id)}
-                      onToggleCollapse={() => toggleCollapse(comp.id)}
-                      addonComponents={addonComponents}
-                      addonDefinitions={addonDefinitions}
-                    />
-                  ) : (
-                    <AddonCard
-                      key={comp.id}
-                      component={comp}
-                      onUpdate={(updated) =>
-                        updateComponent(comp.id, updated)
-                      }
-                      onRemove={() => removeComponent(comp.id)}
-                      onToggleCollapse={() => toggleCollapse(comp.id)}
-                      addonDefinitions={addonDefinitions}
-                    />
-                  )
-                )}
-              </div>
-            )}
-
-            <AddComponentButton
-              onAddWorkload={addWorkload}
-              onAddAddon={() => setShowAddonPicker(true)}
-            />
-          </div>
-
-          {/* Error */}
-          {error && (
-            <>
-              <SectionDivider />
-              <div className="px-6 py-4">
-                <div className="rounded-lg bg-red-50 border border-red-200 p-4">
-                  <p className="text-sm text-destructive">{error}</p>
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Actions */}
-          <SectionDivider />
-          <div className="px-6 py-4 flex gap-3 justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => router.push('/apps')}
-              disabled={createApp.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={handleDeploy}
-              disabled={createApp.isPending}
-            >
-              {createApp.isPending ? 'Deploying...' : 'Deploy'}
-            </Button>
+          <div>
+            <FieldLabel required>Project</FieldLabel>
+            <TSelect value={selectedProjectId} onChange={(e) => setSelectedProjectId(e.target.value)} disabled={createApp.isPending}>
+              <option value="">Select a project…</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.display_name || p.name} ({p.namespace})</option>
+              ))}
+            </TSelect>
+            <p className="text-[10.5px] mt-1" style={{ color: 'var(--text-4)' }}>Determines the target cluster.</p>
           </div>
         </div>
-      </motion.div>
 
-      {/* Addon picker modal */}
-      <AnimatePresence>
-        {showAddonPicker && (
-          <AddonPicker
-            definitions={addonDefinitions}
-            onSelect={addAddonFromDef}
-            onClose={() => setShowAddonPicker(false)}
-          />
+        <div className="px-5 py-4">
+          <div className="mb-3">
+            <SectionLabel>Components</SectionLabel>
+            <p className="text-[11.5px] mt-1" style={{ color: 'var(--text-3)' }}>Add at least one workload. Add addons (databases, caches) and wire their exported values into workload env vars.</p>
+          </div>
+
+          {components.length > 0 && (
+            <div className="space-y-3 mb-3">
+              {components.map((comp) =>
+                comp.type === 'workload' ? (
+                  <WorkloadCard
+                    key={comp.id}
+                    component={comp}
+                    onUpdate={(updated) => updateComponent(comp.id, updated)}
+                    onRemove={() => removeComponent(comp.id)}
+                    onToggleCollapse={() => toggleCollapse(comp.id)}
+                    addonComponents={addonComponents}
+                    addonDefinitions={addonDefinitions}
+                  />
+                ) : (
+                  <AddonCard
+                    key={comp.id}
+                    component={comp}
+                    onUpdate={(updated) => updateComponent(comp.id, updated)}
+                    onRemove={() => removeComponent(comp.id)}
+                    onToggleCollapse={() => toggleCollapse(comp.id)}
+                    addonDefinitions={addonDefinitions}
+                  />
+                ),
+              )}
+            </div>
+          )}
+
+          <AddComponentButton onAddWorkload={addWorkload} onAddAddon={() => setShowAddonPicker(true)} />
+        </div>
+
+        {error && (
+          <div className="px-5 py-4" style={{ borderTop: '1px solid var(--border)' }}>
+            <div className="rounded-lg p-3 text-[12.5px]" style={{ background: 'var(--err-soft)', color: 'var(--err)' }}>{error}</div>
+          </div>
         )}
-      </AnimatePresence>
+
+        <div className="px-5 py-4 flex gap-2 justify-end" style={{ borderTop: '1px solid var(--border)' }}>
+          <Btn type="button" variant="ghost" size="sm" onClick={() => router.push('/apps')} disabled={createApp.isPending}>Cancel</Btn>
+          <Btn type="button" variant="primary" size="sm" onClick={handleDeploy} disabled={createApp.isPending}>{createApp.isPending ? 'Deploying…' : 'Deploy'}</Btn>
+        </div>
+      </Card>
+
+      {showAddonPicker && <AddonPicker definitions={addonDefinitions} onSelect={addAddonFromDef} onClose={() => setShowAddonPicker(false)} />}
     </div>
   );
 }
