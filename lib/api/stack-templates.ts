@@ -1,4 +1,5 @@
 import { apiClient } from '../api-client';
+import type { ChartSpec } from '@/types/api';
 
 // -- Types matching backend schemas --
 
@@ -98,16 +99,58 @@ export interface StackTemplateCreate {
   parameters?: Record<string, unknown>;
 }
 
-export interface StackTemplateFromProject {
+export interface StackTemplateFromApp {
   name: string;
+  namespace?: string;
   description?: string;
   version?: string;
   scope?: 'global' | 'cluster' | 'project';
   icon?: string;
   tags?: string[];
+  preserve_export_refs?: boolean;
+}
+
+export interface ChartParameterSpec {
+  type: 'string' | 'integer' | 'boolean';
+  description?: string;
+  default?: unknown;
+  required?: boolean;
+  component: string;
+  path: string;
+  generator?: 'random_hex_32' | 'random_hex_16' | 'random_password' | 'uuid';
+}
+
+export interface StackTemplateFromChart {
+  name: string;
+  namespace?: string;
+  description?: string;
+  version?: string;
+  scope?: 'global' | 'cluster' | 'project';
+  icon?: string;
+  tags?: string[];
+  component_name: string;
+  component_type: 'workload' | 'addon';
+  chart: ChartSpec;
+  values?: Record<string, unknown>;
+  parameters?: Record<string, ChartParameterSpec>;
+}
+
+export interface RegistrySource {
+  repo?: string;
+  ref?: string;
+  path?: string;
 }
 
 // -- API client --
+
+function buildRegistrySourceQuery(source?: RegistrySource): string {
+  const query = new URLSearchParams();
+  if (source?.repo) query.set('repo', source.repo);
+  if (source?.ref) query.set('ref', source.ref);
+  if (source?.path) query.set('path', source.path);
+  const qs = query.toString();
+  return qs ? `?${qs}` : '';
+}
 
 export const stackTemplatesApi = {
   list: (params?: { namespace?: string; scope?: string }) => {
@@ -124,8 +167,19 @@ export const stackTemplatesApi = {
   create: (data: StackTemplateCreate) =>
     apiClient.post<StackTemplateRead>('/stack-templates', data),
 
-  createFromProject: (projectId: string, data: StackTemplateFromProject) =>
-    apiClient.post<StackTemplateRead>(`/stack-templates/from-project/${projectId}`, data),
+  createFromApp: (source: {
+    namespace: string;
+    name: string;
+    project_id: string;
+    data: StackTemplateFromApp;
+  }) =>
+    apiClient.post<StackTemplateRead>(
+      `/stack-templates/from-app/${encodeURIComponent(source.namespace)}/${encodeURIComponent(source.name)}?project_id=${encodeURIComponent(source.project_id)}`,
+      source.data,
+    ),
+
+  createFromChart: (data: StackTemplateFromChart) =>
+    apiClient.post<StackTemplateRead>('/stack-templates/from-chart', data),
 
   delete: (namespace: string, name: string) =>
     apiClient.delete<void>(`/stack-templates/${namespace}/${name}`),
@@ -137,16 +191,18 @@ export const stackTemplatesApi = {
     ),
 
   // Registry (community templates)
-  listRegistry: () =>
-    apiClient.get<RegistryTemplateList>('/stack-templates/registry'),
+  listRegistry: (source?: RegistrySource) =>
+    apiClient.get<RegistryTemplateList>(`/stack-templates/registry${buildRegistrySourceQuery(source)}`),
 
-  getRegistry: (name: string) =>
-    apiClient.get<StackTemplateRead>(`/stack-templates/registry/${name}`),
+  getRegistry: (name: string, source?: RegistrySource) =>
+    apiClient.get<StackTemplateRead>(
+      `/stack-templates/registry/${encodeURIComponent(name)}${buildRegistrySourceQuery(source)}`,
+    ),
 
-  installRegistry: (name: string, namespace: string) =>
+  installRegistry: (name: string, namespace: string, source?: RegistrySource) =>
     apiClient.post<StackTemplateRead>(
-      `/stack-templates/registry/${name}/install?namespace=${encodeURIComponent(namespace)}`,
-      {}
+      `/stack-templates/registry/${encodeURIComponent(name)}/install?namespace=${encodeURIComponent(namespace)}${buildRegistrySourceQuery(source).replace('?', '&')}`,
+      {},
     ),
 
   listDeploys: (orgId: string) =>

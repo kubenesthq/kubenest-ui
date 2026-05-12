@@ -1,5 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { stackTemplatesApi, type StackTemplateCreate, type StackTemplateFromProject, type StackTemplateDeploy } from '@/lib/api/stack-templates';
+import {
+  stackTemplatesApi,
+  type RegistrySource,
+  type StackTemplateCreate,
+  type StackTemplateDeploy,
+  type StackTemplateFromApp,
+  type StackTemplateFromChart,
+} from '@/lib/api/stack-templates';
 
 export function useStackTemplates(params?: { namespace?: string; scope?: string }) {
   return useQuery({
@@ -16,10 +23,10 @@ export function useStackTemplate(namespace: string, name: string) {
   });
 }
 
-export function useRegistryTemplates() {
+export function useRegistryTemplates(source?: RegistrySource) {
   return useQuery({
-    queryKey: ['stack-templates-registry'],
-    queryFn: () => stackTemplatesApi.listRegistry(),
+    queryKey: ['stack-templates-registry', source],
+    queryFn: () => stackTemplatesApi.listRegistry(source),
   });
 }
 
@@ -33,11 +40,25 @@ export function useCreateStackTemplate() {
   });
 }
 
-export function useCreateStackTemplateFromProject() {
+export function useCreateStackTemplateFromApp() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ projectId, data }: { projectId: string; data: StackTemplateFromProject }) =>
-      stackTemplatesApi.createFromProject(projectId, data),
+    mutationFn: (args: {
+      project_id: string;
+      namespace: string;
+      name: string;
+      data: StackTemplateFromApp;
+    }) => stackTemplatesApi.createFromApp(args),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['stack-templates'] });
+    },
+  });
+}
+
+export function useCreateStackTemplateFromChart() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: StackTemplateFromChart) => stackTemplatesApi.createFromChart(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stack-templates'] });
     },
@@ -65,10 +86,11 @@ export function useDeployStackTemplate(namespace: string, name: string) {
 export function useInstallRegistryTemplate() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ name, namespace }: { name: string; namespace: string }) =>
-      stackTemplatesApi.installRegistry(name, namespace),
+    mutationFn: ({ name, namespace, source }: { name: string; namespace: string; source?: RegistrySource }) =>
+      stackTemplatesApi.installRegistry(name, namespace, source),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stack-templates'] });
+      queryClient.invalidateQueries({ queryKey: ['stack-templates-registry'] });
     },
   });
 }
