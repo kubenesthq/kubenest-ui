@@ -11,6 +11,7 @@ import {
   Container,
   Database,
   Download,
+  History,
   Loader2,
   Pause,
   Play,
@@ -672,7 +673,19 @@ function AppDetailPageInner() {
           deployLoading={deploymentsPreview.isLoading}
         />
       )}
-      {tab === 'deploys' && <DeploymentsTab namespace={namespace} name={name} projectId={projectId} />}
+      {tab === 'deploys' && (
+        <DeploymentsTab
+          namespace={namespace}
+          name={name}
+          projectId={projectId}
+          components={app.components}
+          componentStatuses={statusByName}
+          live={!staleStatuses && sse.connected}
+          stale={staleStatuses}
+          onRedeploy={handleRedeploy}
+          redeploying={redeploy.isPending}
+        />
+      )}
       {tab === 'env' && (
         <EnvironmentPatchTab
           components={app.components}
@@ -798,7 +811,7 @@ function OverviewTab({
                   <p className="text-[10.5px]" style={{ color: 'var(--text-3)' }}>{format(new Date(row.created_at), 'MMM d, HH:mm')} · {String(row.status).toLowerCase()}</p>
                 </div>
               ))}
-              <p className="text-[10.5px]" style={{ color: 'var(--text-4)' }}>Full timeline + redeploy/rollback continue in kn-u9.</p>
+              <p className="text-[10.5px]" style={{ color: 'var(--text-4)' }}>Open the Deploys tab for the full timeline, redeploy and rollback.</p>
             </div>
           )}
         </div>
@@ -811,64 +824,207 @@ function OverviewTab({
   );
 }
 
-function DeploymentsTab({ namespace, name, projectId }: { namespace: string; name: string; projectId: string }) {
+const DEPLOY_STATUS_TONE: Record<string, PillTone> = {
+  completed: 'ok',
+  failed: 'err',
+  in_progress: 'info',
+  pending: 'info',
+};
+const DEPLOY_STATUS_DOT: Record<string, string> = {
+  completed: 'var(--ok)',
+  failed: 'var(--err)',
+  in_progress: 'var(--info)',
+  pending: 'var(--info)',
+};
+const IN_FLIGHT_PHASES = new Set(['Pending', 'Deploying', 'Building', 'Progressing']);
+
+function relTime(iso: string): string {
+  const d = Date.now() - new Date(iso).getTime();
+  const s = Math.max(0, Math.floor(d / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+function DeploymentsTab({
+  namespace,
+  name,
+  projectId,
+  components,
+  componentStatuses,
+  live,
+  stale,
+  onRedeploy,
+  redeploying,
+}: {
+  namespace: string;
+  name: string;
+  projectId: string;
+  components: AppReadComponent[];
+  componentStatuses: Record<string, LiveComponentStatus>;
+  live: boolean;
+  stale: boolean;
+  onRedeploy: () => void;
+  redeploying: boolean;
+}) {
   const { toast } = useToast();
   const [page, setPage] = useState(1);
   const itemsPerPage = 20;
   const deployments = useAppDeployments(namespace, name, projectId, page, itemsPerPage);
   const rollback = useRollbackApp(namespace, name, projectId);
 
-  if (deployments.isLoading) {
-    return <Card><div className="py-10 flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--text-3)' }} /></div></Card>;
-  }
+  const [rollbackTarget, setRollbackTarget] = useState<DeploymentRecord | null>(null);
+  const [rollbackError, setRollbackError] = useState<string | null>(null);
+  const [rolledBackTo, setRolledBackTo] = useState<DeploymentRecord | null>(null);
 
-  const rows = deployments.data?.data ?? [];
-  if (rows.length === 0) {
-    return <Card><div className="py-10 text-center text-[12.5px]" style={{ color: 'var(--text-3)' }}>No deployments yet.</div></Card>;
-  }
+  const workloadComponents = useMemo(() => components.filter((c) => isWorkloadType(c.type)), [components]);
+  const someComponentInFlight =
+    !stale && workloadComponents.some((c) => IN_FLIGHT_PHASES.has(componentStatuses[c.name]?.phase ?? ''));
+  const progressing = redeploying || rollback.isPending || someComponentInFlight;
 
-  const handleRollback = (row: DeploymentRecord) => {
+  const doRollback = (row: DeploymentRecord) => {
+    setRollbackError(null);
     rollback.mutate(row.id, {
-      onSuccess: () => toast({ title: 'Rolled back', description: row.description }),
-      onError: (error: Error) => toast({ title: 'Rollback failed', description: error.message, variant: 'error' }),
+      onSuccess: () => {
+        setRolledBackTo(row);
+        setRollbackTarget(null);
+        toast({ title: 'Rollback started', description: `Re-applying the spec from "${row.description || 'that deploy'}".` });
+      },
+      onError: (error: Error) => {
+        setRollbackError(error.message || 'Rollback failed');
+        setRollbackTarget(null);
+        toast({ title: 'Rollback failed', description: error.message, variant: 'error' });
+      },
     });
   };
 
+  const rows = deployments.data?.data ?? [];
   const totalPages = Math.max(1, Math.ceil((deployments.data?.total_count ?? 0) / itemsPerPage));
 
   return (
-    <Card flush>
-      <div>
-        {rows.map((row) => (
-          <div key={row.id} className="flex items-center justify-between py-3 px-4 gap-4" style={{ borderTop: '1px solid var(--border)' }}>
-            <div className="min-w-0">
-              <p className="text-[12.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{row.description}</p>
-              <p className="text-[10.5px]" style={{ color: 'var(--text-3)' }}>
-                {format(new Date(row.created_at), 'MMM d, HH:mm')} · {String(row.status).toLowerCase()}{row.error_message ? ` · ${row.error_message}` : ''}
-              </p>
+    <div className="space-y-4">
+      <Card flush>
+        <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div>
+            <div className="text-[13.5px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--text)' }}>
+              <History className="h-3.5 w-3.5" style={{ color: 'var(--text-3)' }} /> Deploy timeline
             </div>
-            <div className="shrink-0">
-              <Btn
-                variant="default"
-                size="sm"
-                disabled={!row.prior_state || rollback.isPending}
-                onClick={() => handleRollback(row)}
-                title={row.prior_state ? 'Restore the spec captured by this deployment' : 'No prior state captured - cannot rollback'}
-              >
-                Rollback
-              </Btn>
+            <div className="text-[11.5px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+              Real deploys — sha, description, status, timestamps.{' '}
+              <span style={{ color: 'var(--text-4)' }}>Deploy #, duration, commit author/branch and diff stats arrive with kn-B10.</span>
             </div>
           </div>
-        ))}
-      </div>
-      {totalPages > 1 ? (
-        <div className="flex items-center justify-end gap-2 py-2 px-4 text-[11.5px]" style={{ color: 'var(--text-3)', borderTop: '1px solid var(--border)' }}>
-          <Btn variant="ghost" size="sm" disabled={page === 1} onClick={() => setPage((prev) => Math.max(1, prev - 1))}>Prev</Btn>
-          <span>{page} / {totalPages}</span>
-          <Btn variant="ghost" size="sm" disabled={page >= totalPages} onClick={() => setPage((prev) => prev + 1)}>Next</Btn>
+          <Btn variant="primary" size="sm" icon={RefreshCw} onClick={onRedeploy} disabled={redeploying} data-testid="deploys-redeploy">
+            {redeploying ? 'Redeploying…' : 'Redeploy'}
+          </Btn>
         </div>
-      ) : null}
-    </Card>
+
+        {progressing && (
+          <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border)', background: 'var(--info-soft)' }} data-testid="deploy-progress">
+            <div className="text-[12px] font-medium flex items-center gap-1.5 mb-2" style={{ color: 'var(--info)' }}>
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> {rollback.isPending ? 'Rolling back…' : 'Deploy in progress…'}
+              <span className="text-[10.5px] font-normal" style={{ color: 'var(--text-3)' }}>· {live ? 'live via SSE' : 'polling'}</span>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              {workloadComponents.length === 0 ? (
+                <span className="text-[11px]" style={{ color: 'var(--text-3)' }}>no workload components</span>
+              ) : (
+                workloadComponents.map((c) => {
+                  const ph = stale ? 'Stale' : componentStatuses[c.name]?.phase ?? 'Pending';
+                  return (
+                    <span key={c.name} className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-2)' }}>
+                      <span className="font-mono">{c.name}</span>
+                      <PhaseBadge phase={ph} pulsing={!stale && live} />
+                    </span>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+
+        {rollbackError && (
+          <div className="px-4 py-3 text-[12px]" style={{ borderBottom: '1px solid var(--border)', background: 'var(--err-soft)', color: 'var(--err)' }} data-testid="rollback-error">
+            <div className="font-medium flex items-center gap-1.5"><AlertCircle className="h-3.5 w-3.5" /> Rollback failed</div>
+            <p className="mt-0.5">{rollbackError} — the app’s current spec is unchanged. Retry, or pick another deploy below.</p>
+          </div>
+        )}
+        {rolledBackTo && !rollbackError && !rollback.isPending && (
+          <div className="px-4 py-3 text-[12px]" style={{ borderBottom: '1px solid var(--border)', background: 'var(--ok-soft)', color: 'var(--ok)' }}>
+            <span className="font-medium">Rolled back</span> to “{rolledBackTo.description || 'a prior deploy'}”. Watch the component status above settle to Running.
+          </div>
+        )}
+
+        {deployments.isLoading ? (
+          <div className="py-10 flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin" style={{ color: 'var(--text-3)' }} /></div>
+        ) : rows.length === 0 ? (
+          <div className="py-10 text-center text-[12.5px]" style={{ color: 'var(--text-3)' }}>No deploys yet — redeploy to create the first timeline entry.</div>
+        ) : (
+          <div>
+            {rows.map((row) => {
+              const st = String(row.status).toLowerCase();
+              const failed = st === 'failed';
+              return (
+                <div key={row.id} className="flex items-start justify-between py-3 px-4 gap-4" style={{ borderTop: '1px solid var(--border)' }} data-testid="deploy-row">
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: DEPLOY_STATUS_DOT[st] ?? 'var(--text-3)' }} />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-[12.5px] font-medium truncate" style={{ color: failed ? 'var(--err)' : 'var(--text)' }}>{row.description || '(deploy)'}</p>
+                        <Pill tone={DEPLOY_STATUS_TONE[st] ?? 'default'} size="sm">{st.replace('_', ' ')}</Pill>
+                      </div>
+                      <p className="text-[10.5px] mt-0.5 font-mono" style={{ color: 'var(--text-3)' }}>
+                        {row.sha ? `${row.sha.slice(0, 12)} · ` : ''}{row.triggered_by} · {relTime(row.created_at)}{row.completed_at ? ` · done ${relTime(row.completed_at)}` : ''}
+                      </p>
+                      {row.error_message && <p className="text-[10.5px] mt-1 font-mono" style={{ color: 'var(--err)' }}>{row.error_message}</p>}
+                    </div>
+                  </div>
+                  <div className="shrink-0">
+                    <Btn
+                      variant="default"
+                      size="sm"
+                      disabled={rollback.isPending}
+                      onClick={() => setRollbackTarget(row)}
+                      data-testid="deploy-rollback"
+                      title={row.prior_state ? 'Re-apply the spec captured by this deploy' : 'Roll the app back to this point (the operator re-applies the prior spec)'}
+                    >
+                      Roll back to this
+                    </Btn>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {totalPages > 1 ? (
+          <div className="flex items-center justify-end gap-2 py-2 px-4 text-[11.5px]" style={{ color: 'var(--text-3)', borderTop: '1px solid var(--border)' }}>
+            <Btn variant="ghost" size="sm" disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</Btn>
+            <span>{page} / {totalPages}</span>
+            <Btn variant="ghost" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</Btn>
+          </div>
+        ) : null}
+      </Card>
+
+      {rollbackTarget && (
+        <div className="fixed inset-0 z-[80] flex items-start justify-center pt-[16vh]" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setRollbackTarget(null)}>
+          <div onClick={(e) => e.stopPropagation()} className="rounded-xl border anim-slide-up p-4" style={{ background: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--shadow-pop)', width: 460 }} role="dialog" aria-label="Roll back">
+            <div className="text-[14px] font-semibold mb-1" style={{ color: 'var(--text)' }}>Roll back this app</div>
+            <p className="text-[12.5px] mb-3" style={{ color: 'var(--text-3)' }}>
+              Re-apply the spec from <span className="font-medium" style={{ color: 'var(--text-2)' }}>“{rollbackTarget.description || 'this deploy'}”</span>
+              {rollbackTarget.sha ? <> (<span className="font-mono">{rollbackTarget.sha.slice(0, 12)}</span>)</> : null}? The operator re-applies it idempotently; component status moves back through Deploying → Running.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" size="sm" onClick={() => setRollbackTarget(null)} disabled={rollback.isPending}>Cancel</Btn>
+              <Btn variant="primary" size="sm" onClick={() => doRollback(rollbackTarget)} disabled={rollback.isPending} data-testid="rollback-confirm">{rollback.isPending ? 'Rolling back…' : 'Roll back'}</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
