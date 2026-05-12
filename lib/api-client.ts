@@ -7,6 +7,27 @@ const API_URL = typeof window === 'undefined'
   ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
   : '';
 
+export class ApiClientError extends Error {
+  status: number;
+  code?: string;
+  detail?: unknown;
+
+  constructor(
+    message: string,
+    options: {
+      status: number;
+      code?: string;
+      detail?: unknown;
+    },
+  ) {
+    super(message);
+    this.name = 'ApiClientError';
+    this.status = options.status;
+    this.code = options.code;
+    this.detail = options.detail;
+  }
+}
+
 interface RequestOptions extends RequestInit {
   token?: string;
   _retried?: boolean;
@@ -40,8 +61,42 @@ async function fetchWithAuth(url: string, options: RequestOptions = {}): Promise
   }
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: 'An error occurred' }));
-    throw new Error(error.message || error.detail || `HTTP error! status: ${response.status}`);
+    const payload = await response
+      .json()
+      .catch(() => ({ message: `HTTP error! status: ${response.status}` }));
+
+    let message = `HTTP error! status: ${response.status}`;
+    let code: string | undefined;
+    let detail: unknown = payload;
+
+    if (payload && typeof payload === 'object') {
+      const objectPayload = payload as Record<string, unknown>;
+      const topLevelMessage = objectPayload.message;
+      const topLevelDetail = objectPayload.detail;
+
+      if (typeof topLevelMessage === 'string' && topLevelMessage.trim().length > 0) {
+        message = topLevelMessage;
+      } else if (typeof topLevelDetail === 'string' && topLevelDetail.trim().length > 0) {
+        message = topLevelDetail;
+      } else if (topLevelDetail && typeof topLevelDetail === 'object') {
+        const detailObject = topLevelDetail as Record<string, unknown>;
+        if (typeof detailObject.message === 'string' && detailObject.message.trim().length > 0) {
+          message = detailObject.message;
+        }
+        if (typeof detailObject.code === 'string') {
+          code = detailObject.code;
+        }
+        detail = detailObject;
+      } else if (typeof objectPayload.error === 'string' && objectPayload.error.trim().length > 0) {
+        message = objectPayload.error;
+      }
+    }
+
+    throw new ApiClientError(message, {
+      status: response.status,
+      code,
+      detail,
+    });
   }
 
   // Handle 204 No Content

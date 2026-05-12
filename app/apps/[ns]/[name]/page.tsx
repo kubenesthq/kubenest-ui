@@ -36,14 +36,17 @@ import {
   useSyncAppStatus,
 } from '@/hooks/useApps';
 import { appLogsStreamUrl } from '@/lib/api/apps';
+import { ApiClientError } from '@/lib/api-client';
 import { useAuthStore } from '@/store/auth';
 import { Btn, Card, Pill, SectionLabel, type PillTone } from '@/components/shell/primitives';
 import type {
   AppComponent,
+  DriftDetail,
   AppPhase,
   AppReadComponent,
   AppStatusResponse,
   DeploymentRecord,
+  SyncDriftStatus,
 } from '@/types/api';
 
 const PHASE_TONE: Record<string, PillTone> = {
@@ -93,6 +96,11 @@ interface EnvDraft {
   paramsJson: string;
   env: EnvRow[];
   dependsOn: string[];
+}
+
+interface PatchConflictState {
+  message: string;
+  sync: SyncDriftStatus | null;
 }
 
 function isWorkloadType(type: unknown): boolean {
@@ -206,6 +214,89 @@ function parseObjectJson(raw: string, field: string): Record<string, unknown> | 
     throw new Error(`${field} must be a JSON object`);
   }
   return parsed as Record<string, unknown>;
+}
+
+function normalizeSyncStatus(rawSync: unknown): SyncDriftStatus | null {
+  if (!rawSync || typeof rawSync !== 'object') return null;
+  const raw = rawSync as Record<string, unknown>;
+  const detailsRaw = raw.driftDetails ?? raw.drift_details;
+  const details = Array.isArray(detailsRaw)
+    ? detailsRaw.filter((item) => item && typeof item === 'object') as DriftDetail[]
+    : [];
+
+  return {
+    ...raw,
+    desired: typeof raw.desired === 'string' ? raw.desired : null,
+    observed: typeof raw.observed === 'string' ? raw.observed : null,
+    driftDetected: Boolean(raw.driftDetected ?? raw.drift_detected),
+    driftDetails: details,
+    lastSyncRevision:
+      typeof raw.lastSyncRevision === 'string'
+        ? raw.lastSyncRevision
+        : typeof raw.last_sync_revision === 'string'
+          ? raw.last_sync_revision
+          : null,
+    lastSyncTime:
+      typeof raw.lastSyncTime === 'string'
+        ? raw.lastSyncTime
+        : typeof raw.last_sync_time === 'string'
+          ? raw.last_sync_time
+          : null,
+    syncSource:
+      typeof raw.syncSource === 'string'
+        ? raw.syncSource
+        : typeof raw.sync_source === 'string'
+          ? raw.sync_source
+          : null,
+    driftClass:
+      typeof raw.driftClass === 'string'
+        ? raw.driftClass
+        : typeof raw.drift_class === 'string'
+          ? raw.drift_class
+          : null,
+  };
+}
+
+function formatDriftValue(value: unknown): string {
+  if (value === undefined || value === null) return '—';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return 'Request failed';
+}
+
+function parseGitOpsConflict(error: unknown): PatchConflictState | null {
+  if (error instanceof ApiClientError) {
+    const detailObject =
+      error.detail && typeof error.detail === 'object'
+        ? (error.detail as Record<string, unknown>)
+        : null;
+    const detailCode = detailObject && typeof detailObject.code === 'string' ? detailObject.code : undefined;
+    const detailMessage =
+      detailObject && typeof detailObject.message === 'string' ? detailObject.message : undefined;
+    const sync = normalizeSyncStatus(detailObject?.sync);
+    const message = detailMessage ?? error.message;
+    if (
+      error.status === 409
+      && (error.code === 'gitops_conflict' || detailCode === 'gitops_conflict' || /drift|gitops|conflict/i.test(message))
+    ) {
+      return { message, sync };
+    }
+  }
+
+  if (error instanceof Error && /drift|gitops|conflict/i.test(error.message)) {
+    return { message: error.message, sync: null };
+  }
+
+  return null;
 }
 
 function ComponentIcon({ type }: { type: string }) {
@@ -343,11 +434,13 @@ function AppDetailPageInner() {
   const [lastStatusRefreshAt, setLastStatusRefreshAt] = useState<number | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [clock, setClock] = useState(() => Date.now());
+  const [appSync, setAppSync] = useState<SyncDriftStatus | null>(null);
   const [envDrafts, setEnvDrafts] = useState<Record<string, EnvDraft>>({});
   const [savingComponent, setSavingComponent] = useState<string | null>(null);
+  const [patchConflict, setPatchConflict] = useState<PatchConflictState | null>(null);
 
   const sse = useSSE(
-    projectId ? { project_id: projectId, resource_type: 'workload' } : undefined,
+    projectId ? { project_id: projectId, resource_type: 'all' } : undefined,
     Boolean(projectId),
   );
 
@@ -379,6 +472,7 @@ function AppDetailPageInner() {
         updatedAt: now,
       };
     }
+    setAppSync(normalizeSyncStatus(data.sync));
     setStatusByName((prev) => ({ ...prev, ...updates }));
     setLastStatusRefreshAt(now);
     setStatusError(null);
@@ -412,6 +506,7 @@ function AppDetailPageInner() {
   useEffect(() => {
     const app = appQuery.data;
     if (!app) return;
+    setAppSync(normalizeSyncStatus(app.sync));
     setStatusByName((prev) => {
       const next = { ...prev };
       let changed = false;
@@ -432,10 +527,24 @@ function AppDetailPageInner() {
     if (!app || !event) return;
 
     const eventType = typeof event.event_type === 'string' ? event.event_type : '';
-    if (eventType !== 'application_status_changed' && eventType !== 'workload_status_update') return;
+    if (
+      eventType !== 'application_status_changed'
+      && eventType !== 'workload_status_update'
+      && eventType !== 'app_status_update'
+    ) return;
 
     const payload =
       event.payload && typeof event.payload === 'object' ? (event.payload as Record<string, unknown>) : event;
+
+    const nextSync = normalizeSyncStatus(payload.sync ?? event.sync);
+    if (nextSync) {
+      setAppSync(nextSync);
+      setLastStatusRefreshAt(Date.now());
+    }
+
+    if (eventType === 'application_status_changed' || eventType === 'app_status_update') {
+      return;
+    }
 
     const workloadName =
       (payload.workload_name as string | undefined) ??
@@ -463,6 +572,13 @@ function AppDetailPageInner() {
     setStatusByName((prev) => ({ ...prev, [workloadName]: { phase, health, sync, updatedAt: now } }));
     setLastStatusRefreshAt(now);
   }, [appQuery.data, namespace, sse.lastEvent]);
+
+  useEffect(() => {
+    if (!patchConflict) return;
+    if (appSync?.driftClass !== 'blocked_sync') {
+      setPatchConflict(null);
+    }
+  }, [appSync, patchConflict]);
 
   useEffect(() => {
     const app = appQuery.data;
@@ -550,16 +666,31 @@ function AppDetailPageInner() {
       if (draft.dependsOn.length > 0) payload.depends_on = draft.dependsOn;
 
       setSavingComponent(componentName);
+      setPatchConflict(null);
       patchMutation.mutate(
         { components: [payload] },
         {
           onSuccess: () => {
             setSavingComponent(null);
+            setPatchConflict(null);
             toast({ title: 'App updated', description: `Patched component ${componentName}.` });
           },
-          onError: (error: Error) => {
+          onError: (error: unknown) => {
             setSavingComponent(null);
-            toast({ title: 'Patch failed', description: error.message, variant: 'error' });
+            const conflict = parseGitOpsConflict(error);
+            if (conflict) {
+              setPatchConflict(conflict);
+              if (conflict.sync) {
+                setAppSync(conflict.sync);
+              }
+              toast({
+                title: 'GitOps conflict',
+                description: conflict.message,
+                variant: 'error',
+              });
+              return;
+            }
+            toast({ title: 'Patch failed', description: errorMessage(error), variant: 'error' });
           },
         },
       );
@@ -624,6 +755,15 @@ function AppDetailPageInner() {
             <h1 className="text-[22px] font-semibold tracking-tight truncate" style={{ color: 'var(--text)' }}>{app.name}</h1>
             <PhaseBadge phase={aggregatePhase} pulsing={!staleStatuses && sse.connected} />
             {app.template_id ? <Pill tone="accent" size="sm">via template: {app.template_id}</Pill> : null}
+            {appSync?.driftDetected ? (
+              <Pill
+                tone={appSync.driftClass === 'blocked_sync' ? 'err' : 'warn'}
+                size="sm"
+                data-testid="app-drift-badge"
+              >
+                drift {appSync.driftClass === 'blocked_sync' ? '(blocked)' : '(recoverable)'}
+              </Pill>
+            ) : null}
           </div>
           <p className="text-[12.5px]" style={{ color: 'var(--text-3)' }}>
             {project?.name ?? namespace}
@@ -661,6 +801,17 @@ function AppDetailPageInner() {
         </div>
       </div>
 
+      {appSync?.driftDetected ? (
+        <DriftSurfaceCard
+          sync={appSync}
+          refreshing={syncMutation.isPending}
+          redeploying={redeploy.isPending}
+          onRefresh={() => void refreshViaPoll()}
+          onRedeploy={handleRedeploy}
+          onRollback={() => setTab('deploys')}
+        />
+      ) : null}
+
       <TabBar tab={tab} setTab={setTab} />
 
       {tab === 'overview' && (
@@ -694,6 +845,8 @@ function AppDetailPageInner() {
           onSave={saveComponentPatch}
           savingComponent={savingComponent}
           patchPending={patchMutation.isPending}
+          conflict={patchConflict}
+          onClearConflict={() => setPatchConflict(null)}
         />
       )}
       {tab === 'logs' && <LogsTab namespace={namespace} name={name} projectId={projectId} components={app.components} />}
@@ -732,6 +885,106 @@ function AppDetailPageInner() {
         </div>
       )}
     </div>
+  );
+}
+
+function DriftSurfaceCard({
+  sync,
+  refreshing,
+  redeploying,
+  onRefresh,
+  onRedeploy,
+  onRollback,
+}: {
+  sync: SyncDriftStatus;
+  refreshing: boolean;
+  redeploying: boolean;
+  onRefresh: () => void;
+  onRedeploy: () => void;
+  onRollback: () => void;
+}) {
+  const driftClass = sync.driftClass ?? 'recoverable';
+  const blocked = driftClass === 'blocked_sync';
+  const details = Array.isArray(sync.driftDetails) ? sync.driftDetails : [];
+
+  return (
+    <Card flush data-testid="drift-surface" className="mb-4">
+      <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap" style={{ borderBottom: '1px solid var(--border)' }}>
+        <div>
+          <div className="text-[13.5px] font-semibold flex items-center gap-2" style={{ color: 'var(--text)' }}>
+            <AlertCircle className="h-3.5 w-3.5" style={{ color: blocked ? 'var(--err)' : 'var(--warn)' }} />
+            GitOps drift detected
+            <Pill tone={blocked ? 'err' : 'warn'} size="sm" data-testid="drift-class-pill">
+              {blocked ? 'blocked sync' : 'recoverable drift'}
+            </Pill>
+          </div>
+          <p className="text-[11.5px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+            Desired: <span className="font-medium" style={{ color: 'var(--text-2)' }}>{sync.desired ?? 'unknown'}</span>
+            {' · '}
+            Observed: <span className="font-medium" style={{ color: 'var(--text-2)' }}>{sync.observed ?? 'unknown'}</span>
+            {sync.lastSyncRevision ? <> · revision <span className="font-mono">{sync.lastSyncRevision.slice(0, 12)}</span></> : null}
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Btn variant="default" size="sm" icon={RotateCw} onClick={onRefresh} disabled={refreshing}>
+            {refreshing ? 'Re-syncing…' : 'Re-sync status'}
+          </Btn>
+          <Btn variant="primary" size="sm" icon={RefreshCw} onClick={onRedeploy} disabled={redeploying}>
+            {redeploying ? 'Redeploying…' : 'Redeploy'}
+          </Btn>
+          <Btn variant="default" size="sm" icon={History} onClick={onRollback}>
+            Rollback
+          </Btn>
+        </div>
+      </div>
+
+      <div className="px-4 py-3 space-y-2">
+        <p className="text-[12px]" style={{ color: blocked ? 'var(--err)' : 'var(--warn)' }}>
+          {blocked
+            ? 'Writes are blocked until this git/cluster conflict is reconciled. Use Re-sync, Redeploy, or Rollback.'
+            : 'Drift is recoverable. Use safe actions to reconcile desired and observed state.'}
+        </p>
+
+        <SectionLabel className="mb-0.5">What differs</SectionLabel>
+        {details.length === 0 ? (
+          <p className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>
+            Drift was reported, but no per-resource detail was attached yet.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {details.map((detail, index) => (
+              <div
+                key={`${detail.resource ?? 'resource'}-${detail.field ?? 'field'}-${index}`}
+                className="rounded-md px-3 py-2"
+                style={{ border: '1px solid var(--border)' }}
+                data-testid="drift-detail-row"
+              >
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[12px] font-medium" style={{ color: 'var(--text)' }}>
+                    {detail.resource ?? 'resource'}
+                  </span>
+                  {detail.field ? <span className="text-[11px] font-mono" style={{ color: 'var(--text-3)' }}>{detail.field}</span> : null}
+                  {detail.blocked ? <Pill tone="err" size="sm">blocked</Pill> : <Pill tone="warn" size="sm">recoverable</Pill>}
+                </div>
+                {detail.reason ? (
+                  <p className="text-[11px] mt-1" style={{ color: 'var(--text-3)' }}>{detail.reason}</p>
+                ) : null}
+                <div className="grid gap-2 md:grid-cols-2 mt-2">
+                  <div className="rounded px-2 py-1.5" style={{ background: 'var(--surface-2)' }}>
+                    <p className="text-[10.5px] mb-1" style={{ color: 'var(--text-3)' }}>Desired</p>
+                    <pre className="text-[10.5px] whitespace-pre-wrap break-all font-mono" style={{ color: 'var(--text-2)' }}>{formatDriftValue(detail.desired)}</pre>
+                  </div>
+                  <div className="rounded px-2 py-1.5" style={{ background: 'var(--surface-2)' }}>
+                    <p className="text-[10.5px] mb-1" style={{ color: 'var(--text-3)' }}>Observed</p>
+                    <pre className="text-[10.5px] whitespace-pre-wrap break-all font-mono" style={{ color: 'var(--text-2)' }}>{formatDriftValue(detail.observed)}</pre>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -1035,6 +1288,8 @@ function EnvironmentPatchTab({
   onSave,
   savingComponent,
   patchPending,
+  conflict,
+  onClearConflict,
 }: {
   components: AppReadComponent[];
   drafts: Record<string, EnvDraft>;
@@ -1042,6 +1297,8 @@ function EnvironmentPatchTab({
   onSave: (componentName: string) => void;
   savingComponent: string | null;
   patchPending: boolean;
+  conflict: PatchConflictState | null;
+  onClearConflict: () => void;
 }) {
   const workloads = useMemo(() => components.filter((component) => isWorkloadType(component.type)), [components]);
   const [active, setActive] = useState(workloads[0]?.name ?? '');
@@ -1078,6 +1335,33 @@ function EnvironmentPatchTab({
         <p className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>
           Edit a component by name. Save sends <span className="font-mono">PATCH /apps</span> with the workload spec. Specs are seeded from deployment snapshots when one exists; otherwise fill the fields you need.
         </p>
+        {conflict ? (
+          <div
+            className="mt-3 rounded-md px-3 py-2.5"
+            style={{ background: 'var(--err-soft)', border: '1px solid var(--err)', color: 'var(--err)' }}
+            data-testid="env-conflict-message"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[12px] font-semibold flex items-center gap-1.5">
+                <AlertCircle className="h-3.5 w-3.5" /> Concurrent GitOps conflict
+              </p>
+              <button
+                type="button"
+                onClick={onClearConflict}
+                className="text-[11px] underline underline-offset-2"
+                style={{ color: 'var(--err)' }}
+              >
+                Dismiss
+              </button>
+            </div>
+            <p className="text-[11.5px] mt-1">{conflict.message}</p>
+            {conflict.sync?.driftClass === 'blocked_sync' ? (
+              <p className="text-[11px] mt-1.5">
+                This app is currently <span className="font-medium">blocked_sync</span>. Reconcile from git, redeploy, or roll back first.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </Card>
 
       <ComponentPicker components={workloads} active={active} setActive={setActive} testIdPrefix="env-component" />

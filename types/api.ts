@@ -366,6 +366,28 @@ export interface AppPatch {
   timeout?: string;
 }
 
+export interface DriftDetail {
+  resource?: string | null;
+  field?: string | null;
+  desired?: unknown;
+  observed?: unknown;
+  blocked?: boolean | null;
+  reason?: string | null;
+  [key: string]: unknown;
+}
+
+export interface SyncDriftStatus {
+  desired?: string | null;
+  observed?: string | null;
+  driftDetected?: boolean;
+  driftDetails?: DriftDetail[];
+  lastSyncRevision?: string | null;
+  lastSyncTime?: string | null;
+  syncSource?: string | null;
+  driftClass?: string | null;
+  [key: string]: unknown;
+}
+
 export interface AppReadComponent {
   name: string;
   type: AppComponentType;
@@ -383,6 +405,7 @@ export interface AppRead {
   template_id?: string | null;
   created_at: string;
   updated_at: string | null;
+  sync?: SyncDriftStatus | null;
 }
 
 export interface AppList {
@@ -410,6 +433,7 @@ export interface AppStatusResponse {
   namespace: string;
   phase: string;
   components: ComponentStatus[];
+  sync?: SyncDriftStatus | null;
 }
 
 export interface ComponentSecretList {

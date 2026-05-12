@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/auth';
 export type SSEEventType =
   | 'connected'
   | 'heartbeat'
+  | 'app_status_update'
   | 'workload_status_update'
   | 'application_status_changed'
   | 'addon_status_update'
@@ -247,6 +248,12 @@ export function useSSE(filters?: SSEFilters, enabled: boolean = true): UseSSERet
 
       // Hub passthrough event used by ArgoCD app watcher updates.
       eventSource.addEventListener('application_status_changed', (e) => {
+        const data = JSON.parse(e.data) as SSEEvent;
+        addEvent(data);
+      });
+
+      // Direct app status updates from backend websocket handlers.
+      eventSource.addEventListener('app_status_update', (e) => {
         const data = JSON.parse(e.data) as SSEEvent;
         addEvent(data);
       });
