@@ -377,7 +377,7 @@ export default function ProvisionClusterPage() {
                           <div>
                             <p className="text-sm font-medium text-zinc-900">{cred.name}</p>
                             <p className="text-xs text-zinc-400">
-                              {cloudProviderInfo(cred.provider).label} &middot; {cred.region} &middot; ****{cred.access_key_id.slice(-4)}
+                              {cloudProviderInfo(cred.provider).label}{cred.region ? ` · ${cred.region}` : ''}{cred.access_key_id ? ` · ****${cred.access_key_id.slice(-4)}` : ''}
                             </p>
                           </div>
                         </div>

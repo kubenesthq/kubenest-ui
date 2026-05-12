@@ -131,7 +131,8 @@ export function useBreadcrumbs(): Crumb[] {
         if (seg[2] === 'new') push('New template');
         else if (seg[2] && seg[3]) push(decodeURIComponent(seg[3]));
       } else if (seg[1] === 'cloud-credentials') {
-        push('Cloud providers');
+        if (seg[2]) { push('Cloud providers', '/settings/cloud-credentials'); push(seg[2].toUpperCase()); }
+        else push('Cloud providers');
       } else if (seg[1] === 'teams') {
         push('Members');
       } else if (seg[1] === 'rbac') {

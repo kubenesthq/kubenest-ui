@@ -297,8 +297,12 @@ export interface CloudCredential {
   id: string;
   name: string;
   provider: CloudProvider;
-  region: string;
-  access_key_id: string;
+  // AWS-shape providers (aws/gcp/azure/do/metal):
+  region: string | null;
+  access_key_id: string | null;
+  // SSH-shape provider:
+  user?: string | null;
+  hosts?: string[] | null;
   org_id: string | null;
   created_at: string;
   updated_at: string | null;
@@ -307,12 +311,17 @@ export interface CloudCredential {
   coming_soon?: boolean;
 }
 
+// Provider-specific shape — see the backend CloudCredentialCreate validator.
+// AWS-shape needs region + access_key_id + secret_access_key; SSH needs user + hosts[] + private_key.
 export interface CloudCredentialCreate {
   name: string;
   provider: CloudProvider;
-  access_key_id: string;
-  secret_access_key: string;
-  region: string;
+  region?: string;
+  access_key_id?: string;
+  secret_access_key?: string;
+  user?: string;
+  hosts?: string[];
+  private_key?: string;
 }
 
 export interface CloudCredentialUpdate {
@@ -320,6 +329,9 @@ export interface CloudCredentialUpdate {
   region?: string;
   access_key_id?: string;
   secret_access_key?: string;
+  user?: string;
+  hosts?: string[];
+  private_key?: string;
 }
 
 export type CloudCredentialListResponse = PaginatedResponse<CloudCredential>;
