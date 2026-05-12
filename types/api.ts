@@ -255,6 +255,23 @@ export interface CreateRegistrySecretRequest {
   password: string;
 }
 
+// Metrics (C6 time-series) — GET /apps/{ns}/{name}/metrics, GET /clusters/{id}/metrics
+export type MetricsRange = '15m' | '1h' | '6h' | '24h' | '7d';
+export type MetricsCategory = 'app' | 'component' | 'cluster_capacity';
+
+export interface MetricsSeries {
+  name: string;
+  unit: string;
+  category?: MetricsCategory | null;
+  component?: string | null;
+  /** [timestampSeconds, value] pairs, oldest first. */
+  points: [number, number][];
+}
+
+export interface MetricsSeriesResponse {
+  series: MetricsSeries[];
+}
+
 // Specific paginated response types
 export type ClusterListResponse = PaginatedResponse<Cluster>;
 export type ProjectListResponse = PaginatedResponse<Project>;

@@ -23,6 +23,7 @@ import { useCluster, useClusterProjects, useDeleteCluster } from '@/hooks/useClu
 import type { Cluster } from '@/types/api';
 import { getConnectionStatus } from '@/types/api';
 import { Btn, Card, Pill, SectionLabel, StatusDot, statusTone } from '@/components/shell/primitives';
+import { ClusterMetrics } from '@/components/metrics/Metrics';
 import { ClusterScaleCard } from './ClusterScaleCard';
 import { ProvisioningJobsPanel } from './ProvisioningJobsPanel';
 
@@ -208,11 +209,7 @@ function OverviewTab({ cluster }: { cluster: Cluster }) {
 
       <div className="col-span-2 space-y-4">
         <InstallInstructions clusterId={cluster.id} />
-        <StubCard
-          title="Cluster metrics"
-          body="CPU / memory utilisation, capacity by node, and alert counts will appear here once the cluster health payload and the metrics proxy land."
-          bead="kn-b6 (health payload) / kn-b11 (metrics)"
-        />
+        <Card><ClusterMetrics clusterId={cluster.id} /></Card>
       </div>
       <div className="space-y-4">
         <ComponentsConfigCard clusterId={cluster.id} />

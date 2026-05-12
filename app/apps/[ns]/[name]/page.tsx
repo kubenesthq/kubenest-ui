@@ -39,6 +39,7 @@ import { appLogsStreamUrl } from '@/lib/api/apps';
 import { ApiClientError } from '@/lib/api-client';
 import { useAuthStore } from '@/store/auth';
 import { Btn, Card, Pill, SectionLabel, type PillTone } from '@/components/shell/primitives';
+import { AppMonitoring } from '@/components/metrics/Metrics';
 import type {
   AppComponent,
   DriftDetail,
@@ -822,6 +823,9 @@ function AppDetailPageInner() {
           live={!staleStatuses && sse.connected}
           deployRows={deploymentsPreview.data?.data ?? []}
           deployLoading={deploymentsPreview.isLoading}
+          namespace={namespace}
+          name={name}
+          projectId={projectId}
         />
       )}
       {tab === 'deploys' && (
@@ -862,7 +866,7 @@ function AppDetailPageInner() {
           redeploying={redeploy.isPending}
         />
       )}
-      {tab === 'monitoring' && <MonitoringStubCard />}
+      {tab === 'monitoring' && <AppMonitoring namespace={namespace} name={name} projectId={projectId} />}
 
       {deleteOpen && (
         <div className="fixed inset-0 z-[80] flex items-start justify-center pt-[14vh]" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setDeleteOpen(false)}>
@@ -995,6 +999,9 @@ function OverviewTab({
   live,
   deployRows,
   deployLoading,
+  namespace,
+  name,
+  projectId,
 }: {
   components: AppReadComponent[];
   statuses: Record<string, LiveComponentStatus>;
@@ -1002,6 +1009,9 @@ function OverviewTab({
   live: boolean;
   deployRows: DeploymentRecord[];
   deployLoading: boolean;
+  namespace: string;
+  name: string;
+  projectId: string;
 }) {
   const recent = deployRows.slice(0, 5);
   return (
@@ -1071,7 +1081,13 @@ function OverviewTab({
       </Card>
 
       <div className="md:col-span-2">
-        <MonitoringStubCard title="Monitoring graphs" />
+        <Card>
+          <div className="flex items-center justify-between mb-2">
+            <SectionLabel>Resource graphs</SectionLabel>
+            <span className="text-[10.5px]" style={{ color: 'var(--text-3)' }}>last hour · full graphs on the Monitoring tab</span>
+          </div>
+          <AppMonitoring namespace={namespace} name={name} projectId={projectId} compact />
+        </Card>
       </div>
     </div>
   );
@@ -1678,16 +1694,3 @@ function SettingsTab({
   );
 }
 
-function MonitoringStubCard({ title = 'Monitoring' }: { title?: string }) {
-  return (
-    <Card>
-      <div className="flex items-center gap-2 mb-2">
-        <span style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }} className="text-[10px] font-medium uppercase tracking-wide rounded px-1.5 py-0.5">Not yet available</span>
-        <span className="text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>{title}</span>
-      </div>
-      <p className="text-[12.5px]" style={{ color: 'var(--text-3)' }}>
-        Request / latency / resource graphs for this app are intentionally stubbed — not yet available, needs kn-B11/metrics. They land once the metrics provider ships.
-      </p>
-    </Card>
-  );
-}

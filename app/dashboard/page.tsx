@@ -13,6 +13,7 @@ import { useAuth } from '@/hooks/useAuth';
 import type { Cluster } from '@/types/api';
 import { getConnectionStatus } from '@/types/api';
 import { RecentDeploysFeed } from '@/components/dashboard/RecentDeploysFeed';
+import { ClusterSparkline } from '@/components/metrics/Metrics';
 import { Btn, Card, Pill, StatusDot, statusTone, type PillTone } from '@/components/shell/primitives';
 
 type IconType = React.ComponentType<{ size?: number }>;
@@ -49,7 +50,7 @@ function ClusterFleetPanel({ clusters, loading }: { clusters: Cluster[]; loading
         <div>
           <div className="text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>Cluster fleet</div>
           <div className="text-[11.5px] mt-0.5" style={{ color: 'var(--text-3)' }}>
-            Health and registration. <span style={{ color: 'var(--text-4)' }}>Capacity & utilisation bars land with kn-b11 (metrics).</span>
+            Health, registration, and a 1h capacity sparkline per cluster.
           </div>
         </div>
         <div className="flex items-center gap-1.5">
@@ -73,15 +74,16 @@ function ClusterFleetPanel({ clusters, loading }: { clusters: Cluster[]; loading
               className="grid grid-cols-12 items-center px-4 py-3 hover:bg-[var(--surface-2)] transition-colors text-left"
               style={{ borderTop: '1px solid var(--border)' }}
             >
-              <div className="col-span-5 flex items-center gap-2 min-w-0">
+              <div className="col-span-4 flex items-center gap-2 min-w-0">
                 <StatusDot status={statusTone(c.status)} pulse={statusTone(c.status) === 'warn'} />
                 <span className="text-[12.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{c.name}</span>
                 {c.kubernetes_version && <span className="text-[10px] px-1 py-0.5 rounded font-mono" style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}>{c.kubernetes_version}</span>}
               </div>
-              <div className="col-span-4 text-[11.5px]" style={{ color: 'var(--text-3)' }}>
+              <div className="col-span-3 text-[11.5px] truncate" style={{ color: 'var(--text-3)' }}>
                 {(c.base_domain || c.enterprise_domain) ?? '—'}
               </div>
               <div className="col-span-2 text-[11.5px] font-mono" style={{ color: 'var(--text-2)' }}>{c.node_count ?? 0} nodes</div>
+              <div className="col-span-2 flex justify-end items-center"><ClusterSparkline clusterId={c.id} /></div>
               <div className="col-span-1 text-right"><Pill tone={clusterTone(c)} size="sm" dot>{clusterLabel(c)}</Pill></div>
             </Link>
           ))}
@@ -159,7 +161,7 @@ export default function DashboardPage() {
           <HeroStat label="Clusters" value={clusters.length} sub={`${connected} connected · ${degraded} degraded`} icon={Boxes} />
           <HeroStat label="Apps" value={appCount} sub="across all projects" icon={Box} />
           <HeroStat label="Projects" value={projectCount} sub="namespaces in clusters" icon={FolderKanban} />
-          <HeroStat label="Fleet capacity" value="—" sub="not yet available · kn-b11 (metrics)" icon={Cpu} stub />
+          <HeroStat label="Fleet capacity" value={`${connected}`} sub="connected clusters · per-cluster sparkline below" icon={Cpu} stub={connected === 0} />
         </div>
       </Card>
 
