@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { clustersApi } from '@/lib/api/clusters';
-import type { ClusterCreateRequest } from '@/types/api';
+import type { ClusterCreateRequest, ClusterScaleRequest } from '@/types/api';
 import { useCurrentOrg } from '@/hooks/useOrganization';
 
 export function useClusters() {
@@ -50,6 +50,19 @@ export function useDeleteCluster() {
     mutationFn: (id: string) => clustersApi.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clusters'] });
+    },
+  });
+}
+
+export function useScaleCluster(clusterId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (body: ClusterScaleRequest) => clustersApi.scale(clusterId, body),
+    onSuccess: () => {
+      // The cluster flips to PROVISIONING and a new SCALE job appears; refresh both.
+      queryClient.invalidateQueries({ queryKey: ['clusters', clusterId] });
+      queryClient.invalidateQueries({ queryKey: ['provisioning-jobs', clusterId] });
     },
   });
 }

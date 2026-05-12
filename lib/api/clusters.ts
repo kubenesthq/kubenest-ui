@@ -4,6 +4,8 @@ import type {
   ClusterListResponse,
   ClusterCreateRequest,
   ClusterCreateResponse,
+  ClusterScaleRequest,
+  ClusterScaleResponse,
   ProjectListResponse,
 } from '@/types/api';
 
@@ -20,6 +22,10 @@ export const clustersApi = {
 
   // Delete cluster (flat, access checked server-side)
   delete: (id: string) => apiClient.delete<void>(`/clusters/${id}`),
+
+  // Scale a Terraform-provisioned cluster -> ProvisioningJob(SCALE)
+  scale: (id: string, body: ClusterScaleRequest) =>
+    apiClient.post<ClusterScaleResponse>(`/clusters/${id}/scale`, body),
 
   // Get projects for a cluster
   getProjects: (clusterId: string) =>

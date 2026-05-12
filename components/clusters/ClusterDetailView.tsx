@@ -23,6 +23,7 @@ import { useCluster, useClusterProjects, useDeleteCluster } from '@/hooks/useClu
 import type { Cluster } from '@/types/api';
 import { getConnectionStatus } from '@/types/api';
 import { Btn, Card, Pill, SectionLabel, StatusDot, statusTone } from '@/components/shell/primitives';
+import { ClusterScaleCard } from './ClusterScaleCard';
 import { ProvisioningJobsPanel } from './ProvisioningJobsPanel';
 
 type IconType = ComponentType<{ size?: number }>;
@@ -215,6 +216,7 @@ function OverviewTab({ cluster }: { cluster: Cluster }) {
       </div>
       <div className="space-y-4">
         <ComponentsConfigCard clusterId={cluster.id} />
+        <ClusterScaleCard cluster={cluster} />
       </div>
     </div>
   );

@@ -311,6 +311,18 @@ export interface ProvisioningJob {
   updated_at: string | null;
 }
 
+// POST /clusters/{id}/scale — change node count/size on a Terraform-provisioned cluster.
+export interface ClusterScaleRequest {
+  desired_node_count: number;
+  desired_node_size?: string | null;
+}
+
+export interface ClusterScaleResponse {
+  cluster_id: string;
+  action: 'SCALE';
+  provisioning_job: ProvisioningJob;
+}
+
 // App (StackDeploy) types
 export type AppPhase = 'Pending' | 'Deploying' | 'Running' | 'Degraded' | 'Failed';
 
