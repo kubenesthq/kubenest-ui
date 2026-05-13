@@ -305,6 +305,9 @@ export default function AddonInstanceDetailPage() {
         <Card className="border-zinc-200">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold text-zinc-900">Status Events</CardTitle>
+            <p className="text-xs text-zinc-500">
+              Derived from addon timestamps (created/deployed/phase), not a live events stream.
+            </p>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">

@@ -9,13 +9,14 @@ const here = path.dirname(fileURLToPath(import.meta.url));
  *
  * Test accounts and target environments are documented in the umbrella
  * AGENTS.md (§ "Testing & target environments"). The default account is the
- * march-20-demo control-plane admin; override with E2E_USER / E2E_PASSWORD.
+ * public march-20-demo control-plane user (`lakshmi@lakshminp.com`);
+ * override with E2E_USER / E2E_PASSWORD.
  *
  * Hard rule: every behavioural assertion runs against the REAL backend. No
  * mocked auth, no `page.route()` stubs standing in for API responses, no
  * fixture token. `loginViaUI` drives the actual /login form.
  */
-// Not a secret: the public march-20-demo control-plane admin login, the same
+// Not a secret: the public march-20-demo control-plane user login, the same
 // credential documented in the umbrella AGENTS.md. Override per-env if needed.
 export const TEST_USER = {
   email: process.env.E2E_USER ?? 'lakshmi@lakshminp.com',
