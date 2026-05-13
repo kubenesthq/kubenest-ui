@@ -6,36 +6,13 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import { getAllProjects } from '@/api/projects';
 import { appsApi } from '@/lib/api/apps';
+import { getRecents, pushRecent, type Recent } from '@/lib/recents';
 import { stackTemplatesApi } from '@/lib/api/stack-templates';
 import { useClusters } from '@/hooks/useClusters';
 import { useUiStore } from '@/store/ui';
 import { Kbd, SectionLabel, StatusDot, statusTone, type StatusTone } from '@/components/shell/primitives';
 
 type IconType = ComponentType<{ size?: number }>;
-
-// ── tiny localStorage recents ──────────────────────────────────────────────
-const RECENTS_KEY = 'kn-recents';
-type Recent = { kind: string; id: string; label: string; sub?: string; href: string; ts: number };
-
-function getRecents(): Recent[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(RECENTS_KEY);
-    return raw ? (JSON.parse(raw) as Recent[]) : [];
-  } catch {
-    return [];
-  }
-}
-function pushRecent(r: Omit<Recent, 'ts'>) {
-  if (typeof window === 'undefined') return;
-  try {
-    const list = getRecents().filter((x) => !(x.kind === r.kind && x.id === r.id));
-    list.unshift({ ...r, ts: Date.now() });
-    localStorage.setItem(RECENTS_KEY, JSON.stringify(list.slice(0, 6)));
-  } catch {
-    /* ignore */
-  }
-}
 
 function PalGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (

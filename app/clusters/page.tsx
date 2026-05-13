@@ -60,7 +60,7 @@ function ClusterCard({ c }: { c: Cluster }) {
 export default function ClustersPage() {
   const router = useRouter();
   const { isAuthenticated } = useAuth(true);
-  const { data, isLoading } = useClusters();
+  const { data, isLoading, isError, error } = useClusters();
   const [q, setQ] = useState('');
 
   const clusters = useMemo(() => {
@@ -101,6 +101,12 @@ export default function ClustersPage() {
             <Card key={i} flush className="h-[110px] animate-pulse" />
           ))}
         </div>
+      ) : isError ? (
+        <Card flush className="px-4 py-4">
+          <p className="text-[12.5px]" style={{ color: 'var(--err)' }}>
+            Failed to load clusters{error instanceof Error ? `: ${error.message}` : '.'}
+          </p>
+        </Card>
       ) : (
         <div className="grid grid-cols-3 gap-3">
           {clusters.map((c) => <ClusterCard key={c.id} c={c} />)}

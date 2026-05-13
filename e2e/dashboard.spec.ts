@@ -1,34 +1,31 @@
-import { test, expect } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { artifact } from './fixtures';
 
-/**
- * kn-u2 — Dashboard (KubeNest Design) on real data. Exercised against the REAL
- * backend via the shared auth state from the `setup` project — no mocks, no
- * page.route() stubs.
- */
-test('dashboard: hero stats, cluster fleet, recent deploys (real) + a labelled capacity stub', async ({ page }) => {
+test('dashboard: renders live fleet/recents surfaces and sidebar Activity route', async ({ page }) => {
   await page.goto('/dashboard');
   await page.waitForLoadState('domcontentloaded');
   await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
-  // Real counts in the subline.
   await expect(page.getByText(/Fleet posture across \d+ cluster/)).toBeVisible();
 
-  // ── Hero strip: a labelled capacity stub naming kn-b11 — not fake numbers ─
+  // Hero strip now shows the real connected-cluster summary copy.
   await expect(page.getByText('Fleet capacity')).toBeVisible();
-  await expect(page.getByText(/not yet available.*kn-b11/)).toBeVisible();
+  await expect(page.getByText(/connected clusters.*per-cluster sparkline below/i)).toBeVisible();
 
-  // ── Cluster fleet panel ──────────────────────────────────────────────────
+  // Cluster fleet card now calls out sparklines instead of the previous stub copy.
   await expect(page.getByText('Cluster fleet')).toBeVisible();
-  await expect(page.getByText(/Capacity & utilisation bars land with kn-b11/)).toBeVisible();
-  // At least one real cluster row links into /clusters/<id> (march-20-demo has one).
-  await expect(page.locator('a[href^="/clusters/"]:not([href="/clusters/new"]):not([href^="/clusters/new/"])').first()).toBeVisible({ timeout: 12_000 });
+  await expect(page.getByText(/capacity sparkline per cluster/i)).toBeVisible();
+  await expect(page.getByTestId('cluster-sparkline').first()).toBeVisible({ timeout: 15_000 });
 
-  // ── Recent deploys feed — real deployment history ────────────────────────
+  // Recent deploys remains real-data only.
   await expect(page.getByText('Recent deploys')).toBeVisible();
-  // Either a real deploy row (a /apps/... link carrying a status word) or the
-  // labelled empty state — never fabricated data.
   const deployRow = page.locator('a[href^="/apps/"]').filter({ hasText: /completed|failed|in_progress|pending/i }).first();
   const emptyState = page.getByText('No deployments yet. Deploy an app to see its history here.');
   await expect(deployRow.or(emptyState)).toBeVisible({ timeout: 15_000 });
+
+  // Activity navigation should route to /activity from the sidebar.
+  await page.getByRole('link', { name: 'Activity' }).click();
+  await expect(page).toHaveURL(/\/activity(?:\?|$)/);
+  await expect(page.getByRole('heading', { name: 'Activity' })).toBeVisible();
+
   await page.screenshot({ path: artifact('dashboard.png'), fullPage: true });
 });

@@ -15,18 +15,18 @@ export default function ProjectsPage() {
   const { orgId } = useCurrentOrg();
   const [clusterFilter, setClusterFilter] = useState('all');
 
-  const { data: clustersData, isLoading: clustersLoading } = useQuery({
+  const { data: clustersData, isLoading: clustersLoading, isError: clustersError, error: clustersErr } = useQuery({
     queryKey: ['clusters', orgId],
     queryFn: () => getClusters(orgId!),
     enabled: !!orgId,
   });
   const clusters = clustersData?.data ?? [];
 
-  const { data: projectsData, isLoading: projectsLoading } = useQuery({
+  const { data: projectsData, isLoading: projectsLoading, isError: projectsError, error: projectsErr } = useQuery({
     queryKey: ['projects', 'all', orgId],
     queryFn: async () => {
       if (clusters.length === 0) return { data: [] as Array<Awaited<ReturnType<typeof getProjects>>['data'][number] & { cluster_name?: string }> };
-      const results = await Promise.all(clusters.map((c) => getProjects(c.id).catch(() => ({ data: [] }))));
+      const results = await Promise.all(clusters.map((c) => getProjects(c.id)));
       return {
         data: results.flatMap((r, i) => r.data.map((p) => ({ ...p, cluster_name: clusters[i]?.name }))),
       };
@@ -71,6 +71,14 @@ export default function ProjectsPage() {
         </div>
         {isLoading ? (
           <div className="py-10 text-center text-[12.5px]" style={{ color: 'var(--text-3)' }}>Loading projects…</div>
+        ) : clustersError ? (
+          <div className="py-10 text-center text-[12.5px]" style={{ color: 'var(--err)' }}>
+            Failed to load clusters{clustersErr instanceof Error ? `: ${clustersErr.message}` : '.'}
+          </div>
+        ) : projectsError ? (
+          <div className="py-10 text-center text-[12.5px]" style={{ color: 'var(--err)' }}>
+            Failed to load projects{projectsErr instanceof Error ? `: ${projectsErr.message}` : '.'}
+          </div>
         ) : clusters.length === 0 ? (
           <div className="py-10 text-center text-[12.5px]" style={{ color: 'var(--text-3)' }}>
             No clusters yet. <Link href="/clusters/new" className="hover:underline" style={{ color: 'var(--accent)' }}>Register one</Link> before creating projects.

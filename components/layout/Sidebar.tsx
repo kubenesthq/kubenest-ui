@@ -103,7 +103,6 @@ export function Sidebar() {
   const pathname = usePathname() || '';
   const search = useSearchParams();
   const { org } = useCurrentOrg();
-  const { isSuperadmin } = useAuthStore();
   const openCommand = useUiStore((s) => s.openCommand);
   const openOrgSwitcher = useUiStore((s) => s.openOrgSwitcher);
   const [projectsOpen, setProjectsOpen] = useState(true);
@@ -202,7 +201,7 @@ export function Sidebar() {
           <NavLink icon={Users} label="Members" href="/settings/teams" />
           <NavLink icon={Shield} label="RBAC" href="/settings/rbac" />
           <NavLink icon={Settings} label="Settings" href="/settings" exact />
-          {isSuperadmin && <NavLink icon={Activity} label="Activity" href="/dashboard" />}
+          <NavLink icon={Activity} label="Activity" href="/activity" />
         </div>
       </div>
 
