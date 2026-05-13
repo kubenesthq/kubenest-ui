@@ -488,8 +488,10 @@ function AppDetailPageInner() {
     }
   }, [applySyncStatus, syncMutation]);
 
+  // Kick off the initial status poll when the app identity is known.
   useEffect(() => {
     if (!projectId || !namespace || !name) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- refreshViaPoll writes the status cache; it's a side-effect, not derived render state
     void refreshViaPoll();
   }, [name, namespace, projectId, refreshViaPoll]);
 
@@ -504,9 +506,11 @@ function AppDetailPageInner() {
     return () => clearInterval(id);
   }, [fallbackPollingActive, name, namespace, projectId, refreshViaPoll]);
 
+  // Seed the local status cache from the freshly loaded app document.
   useEffect(() => {
     const app = appQuery.data;
     if (!app) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing local UI status state from the loaded app document on change
     setAppSync(normalizeSyncStatus(app.sync));
     setStatusByName((prev) => {
       const next = { ...prev };
@@ -539,6 +543,7 @@ function AppDetailPageInner() {
 
     const nextSync = normalizeSyncStatus(payload.sync ?? event.sync);
     if (nextSync) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- applying a live SSE status event to local state
       setAppSync(nextSync);
       setLastStatusRefreshAt(Date.now());
     }
@@ -574,17 +579,21 @@ function AppDetailPageInner() {
     setLastStatusRefreshAt(now);
   }, [appQuery.data, namespace, sse.lastEvent]);
 
+  // Clear a stale patch-conflict banner once the drift that caused it clears.
   useEffect(() => {
     if (!patchConflict) return;
     if (appSync?.driftClass !== 'blocked_sync') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reconciling a UI banner to the current drift state
       setPatchConflict(null);
     }
   }, [appSync, patchConflict]);
 
+  // Seed each workload's env-var editing draft from its deployment history.
   useEffect(() => {
     const app = appQuery.data;
     if (!app) return;
     const rows = deploymentsPreview.data?.data ?? [];
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot seeding of editable env drafts from loaded data
     setEnvDrafts((prev) => {
       const next = { ...prev };
       let changed = false;
@@ -1317,15 +1326,10 @@ function EnvironmentPatchTab({
   onClearConflict: () => void;
 }) {
   const workloads = useMemo(() => components.filter((component) => isWorkloadType(component.type)), [components]);
-  const [active, setActive] = useState(workloads[0]?.name ?? '');
-
-  useEffect(() => {
-    if (workloads.length === 0) {
-      setActive('');
-      return;
-    }
-    if (!active || !workloads.some((w) => w.name === active)) setActive(workloads[0].name);
-  }, [active, workloads]);
+  // Derive the active selection from the (possibly-changed) workload list — the
+  // user's pick wins while it's still valid, otherwise fall back to the first.
+  const [picked, setPicked] = useState<string | null>(null);
+  const active = picked && workloads.some((w) => w.name === picked) ? picked : (workloads[0]?.name ?? '');
 
   if (workloads.length === 0) {
     return <Card><div className="py-10 text-center text-[12.5px]" style={{ color: 'var(--text-3)' }}>No workload components - env editing unavailable.</div></Card>;
@@ -1380,7 +1384,7 @@ function EnvironmentPatchTab({
         ) : null}
       </Card>
 
-      <ComponentPicker components={workloads} active={active} setActive={setActive} testIdPrefix="env-component" />
+      <ComponentPicker components={workloads} active={active} setActive={setPicked} testIdPrefix="env-component" />
 
       <Card flush>
         <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
@@ -1473,15 +1477,9 @@ function EnvironmentPatchTab({
 
 function LogsTab({ namespace, name, projectId, components }: { namespace: string; name: string; projectId: string; components: AppReadComponent[] }) {
   const workloads = useMemo(() => components.filter((component) => isWorkloadType(component.type)), [components]);
-  const [active, setActive] = useState(workloads[0]?.name ?? '');
-
-  useEffect(() => {
-    if (workloads.length === 0) {
-      setActive('');
-      return;
-    }
-    if (!active || !workloads.some((component) => component.name === active)) setActive(workloads[0].name);
-  }, [active, workloads]);
+  // Derived active selection — see EnvTab's ComponentPicker for the same shape.
+  const [picked, setPicked] = useState<string | null>(null);
+  const active = picked && workloads.some((w) => w.name === picked) ? picked : (workloads[0]?.name ?? '');
 
   if (workloads.length === 0) {
     return <Card><div className="py-10 text-center text-[12.5px]" style={{ color: 'var(--text-3)' }}>No workload components - logs unavailable.</div></Card>;
@@ -1489,7 +1487,7 @@ function LogsTab({ namespace, name, projectId, components }: { namespace: string
 
   return (
     <div className="space-y-3">
-      <ComponentPicker components={workloads} active={active} setActive={setActive} testIdPrefix="logs-component" />
+      <ComponentPicker components={workloads} active={active} setActive={setPicked} testIdPrefix="logs-component" />
       {active ? <LogStream namespace={namespace} name={name} projectId={projectId} component={active} /> : null}
     </div>
   );
@@ -1598,7 +1596,9 @@ function LogStream({ namespace, name, projectId, component }: { namespace: strin
     }
   }, [append, component, name, namespace, projectId, token]);
 
+  // Open the log stream on mount / when the target changes; abort on cleanup.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- connect() opens the SSE stream and resets the buffer; that's the effect's job
     void connect();
     return () => abortRef.current?.abort();
   }, [connect]);

@@ -34,9 +34,10 @@ test('clusters: list + detail render real status / install command / provisionin
   await page.waitForTimeout(2000); // let the install-command fetch resolve
   expect((await installPre.innerText()).trim().length).toBeGreaterThan(10);
 
-  // Rich-health is a labelled stub naming kn-b6 / kn-b11.
-  await expect(page.getByText('Cluster metrics')).toBeVisible();
-  await expect(page.getByText(/kn-b6.*kn-b11|kn-b6|kn-b11/)).toBeVisible();
+  // kn-u15 wired the Cluster capacity panel to GET /clusters/{id}/metrics —
+  // it renders the series grid or a labelled "No data" state, never the old stub.
+  await expect(page.getByTestId('cluster-metrics')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('metrics-grid').or(page.getByTestId('metrics-empty'))).toBeVisible({ timeout: 15_000 });
   await page.screenshot({ path: artifact('clusters-detail-overview.png'), fullPage: true });
 
   // ── Provisioning tab: real jobs (or the labelled empty state) ────────────

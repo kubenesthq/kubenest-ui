@@ -32,7 +32,10 @@ export function ClusterList() {
   });
   const [demoClusters, setDemoClusters] = useState<DemoCluster[]>([]);
 
+  // Mount-time hydration from localStorage — must run client-side after
+  // hydration (renders [] on the server) to avoid an SSR/client mismatch.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- see comment above
     setDemoClusters(getDemoClusters());
   }, []);
 

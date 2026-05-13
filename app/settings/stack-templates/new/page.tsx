@@ -355,7 +355,7 @@ export default function NewStackTemplatePage() {
                       rows={5}
                       className="font-mono text-xs"
                     />
-                    <p className="text-xs text-zinc-400 mt-1">JSON format. These values are merged into the chart's defaults.</p>
+                    <p className="text-xs text-zinc-400 mt-1">JSON format. These values are merged into the chart&apos;s defaults.</p>
                   </div>
                 )}
               </div>
@@ -382,7 +382,7 @@ export default function NewStackTemplatePage() {
           <div className="space-y-3">
             <p className="text-xs text-zinc-500">
               Parameters let users customize values when deploying this template.
-              Each parameter maps to a specific path in a component's chart values.
+              Each parameter maps to a specific path in a component&apos;s chart values.
             </p>
 
             {parameters.map((param, idx) => (

@@ -120,5 +120,8 @@ test('app detail renders live status/logs, supports env patch, and labels monito
   expect(request.method()).toBe('PATCH');
 
   await page.getByRole('tab', { name: 'Monitoring' }).click();
-  await expect(page.getByText(/needs\s+kn-B11\/metrics/i)).toBeVisible();
+  // kn-u15 wired the Monitoring tab to the real metrics endpoint — it renders
+  // either the series grid or a labelled "No data" state, never the old stub.
+  await expect(page.getByTestId('app-monitoring')).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId('metrics-grid').or(page.getByTestId('metrics-empty'))).toBeVisible({ timeout: 15_000 });
 });

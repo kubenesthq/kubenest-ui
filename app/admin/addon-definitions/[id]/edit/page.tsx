@@ -57,8 +57,11 @@ export default function EditAddonDefinitionPage() {
     queryFn: () => addonDefinitionsApi.get(defId),
   });
 
+  // One-shot hydration of the editable form fields from the fetched definition;
+  // the query result isn't available at mount, so this can't be a lazy initializer.
   useEffect(() => {
     if (def) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- see comment above
       setName(def.name);
       setIcon(def.icon ?? '');
       setDescription(def.description ?? '');

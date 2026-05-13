@@ -23,7 +23,7 @@ export interface SSEEvent {
   id: string;
   type: EventType;
   timestamp: string;
-  data: Record<string, any>;
+  data: Record<string, unknown>;
   clusterId?: string;
   projectId?: string;
   workloadId?: string;

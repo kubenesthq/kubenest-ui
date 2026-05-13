@@ -53,7 +53,7 @@ export function ProjectList({ projects, onDelete, isDeleting }: ProjectListProps
             </TableCell>
             <TableCell>{project.cluster_name || 'Unknown'}</TableCell>
             <TableCell>
-              <ProjectStatusBadge status={project.status as any} />
+              <ProjectStatusBadge status={project.status} />
             </TableCell>
             <TableCell className="text-right">
               {project.workloads_count ?? 0}

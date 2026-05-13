@@ -33,7 +33,7 @@ interface RequestOptions extends RequestInit {
   _retried?: boolean;
 }
 
-async function fetchWithAuth(url: string, options: RequestOptions = {}): Promise<any> {
+async function fetchWithAuth<T = unknown>(url: string, options: RequestOptions = {}): Promise<T> {
   const token = options.token || (typeof window !== 'undefined' ? localStorage.getItem('token') : null);
 
   const response = await fetch(`${API_URL}/api/v1${url}`, {
@@ -50,7 +50,7 @@ async function fetchWithAuth(url: string, options: RequestOptions = {}): Promise
   if (response.status === 401 && !options._retried) {
     const refreshed = await tryRefreshToken();
     if (refreshed) {
-      return fetchWithAuth(url, { ...options, _retried: true });
+      return fetchWithAuth<T>(url, { ...options, _retried: true });
     }
 
     if (typeof window !== 'undefined') {
@@ -101,10 +101,10 @@ async function fetchWithAuth(url: string, options: RequestOptions = {}): Promise
 
   // Handle 204 No Content
   if (response.status === 204) {
-    return undefined;
+    return undefined as T;
   }
 
-  return response.json();
+  return (await response.json()) as T;
 }
 
 let refreshPromise: Promise<boolean> | null = null;
@@ -134,29 +134,29 @@ async function tryRefreshToken(): Promise<boolean> {
 
 export const apiClient = {
   get: <T>(url: string, options?: RequestOptions): Promise<T> =>
-    fetchWithAuth(url, { ...options, method: 'GET' }),
+    fetchWithAuth<T>(url, { ...options, method: 'GET' }),
 
   post: <T>(url: string, data: unknown, options?: RequestOptions): Promise<T> =>
-    fetchWithAuth(url, {
+    fetchWithAuth<T>(url, {
       ...options,
       method: 'POST',
       body: JSON.stringify(data)
     }),
 
   patch: <T>(url: string, data: unknown, options?: RequestOptions): Promise<T> =>
-    fetchWithAuth(url, {
+    fetchWithAuth<T>(url, {
       ...options,
       method: 'PATCH',
       body: JSON.stringify(data)
     }),
 
   put: <T>(url: string, data: unknown, options?: RequestOptions): Promise<T> =>
-    fetchWithAuth(url, {
+    fetchWithAuth<T>(url, {
       ...options,
       method: 'PUT',
       body: JSON.stringify(data)
     }),
 
   delete: <T>(url: string, options?: RequestOptions): Promise<T> =>
-    fetchWithAuth(url, { ...options, method: 'DELETE' }),
+    fetchWithAuth<T>(url, { ...options, method: 'DELETE' }),
 };

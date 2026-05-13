@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface NamespacePreviewProps {
@@ -17,15 +16,8 @@ function generateNamespace(name: string): string {
 }
 
 export function NamespacePreview({ projectName }: NamespacePreviewProps) {
-  const [namespace, setNamespace] = useState('');
-
-  useEffect(() => {
-    if (projectName) {
-      setNamespace(generateNamespace(projectName));
-    } else {
-      setNamespace('');
-    }
-  }, [projectName]);
+  // Pure derived value — no state/effect needed.
+  const namespace = projectName ? generateNamespace(projectName) : '';
 
   if (!namespace) {
     return null;

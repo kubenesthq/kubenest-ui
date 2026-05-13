@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useSSE } from '@/hooks/useSSE';
+import { useSSE, type SSEEvent } from '@/hooks/useSSE';
 import {
   Toast,
   ToastClose,
@@ -21,171 +21,99 @@ interface ToastNotification {
   duration?: number;
 }
 
+// SSE events are loosely-typed wire data; pull values from either the event
+// itself or its `data` envelope, accepting only the shapes we actually use.
+function str(v: unknown): string | undefined {
+  return typeof v === 'string' ? v : undefined;
+}
+function envelope(event: SSEEvent): Record<string, unknown> {
+  const d = (event as Record<string, unknown>).data;
+  return d && typeof d === 'object' && !Array.isArray(d) ? (d as Record<string, unknown>) : {};
+}
+function eventKind(event: SSEEvent): string {
+  return str((event as Record<string, unknown>).type) ?? str(event.event_type) ?? '';
+}
+
+function processEvent(event: SSEEvent): ToastNotification | null {
+  const id = `toast-${Date.now()}`;
+  const e = event as Record<string, unknown>;
+  const data = envelope(event);
+  const kind = eventKind(event);
+
+  // Workload status changes
+  if (kind === 'workload_status') {
+    const status = str(data.status) ?? str(e.status);
+    const workloadName = str(data.name) ?? str(e.name) ?? 'Workload';
+    switch (status?.toLowerCase()) {
+      case 'running':
+        return { id, title: 'Workload Running', description: `${workloadName} is now running successfully`, variant: 'success', icon: <CheckCircle2 className="h-5 w-5" /> };
+      case 'failed':
+        return { id, title: 'Workload Failed', description: `${workloadName} failed to start`, variant: 'error', icon: <XCircle className="h-5 w-5" /> };
+      case 'pending':
+        return { id, title: 'Workload Pending', description: `${workloadName} is being prepared`, variant: 'info', icon: <Info className="h-5 w-5" /> };
+      case 'building':
+        return { id, title: 'Building Workload', description: `${workloadName} is being built`, variant: 'info', icon: <Info className="h-5 w-5" /> };
+      case 'deploying':
+        return { id, title: 'Deploying Workload', description: `${workloadName} is being deployed`, variant: 'info', icon: <Info className="h-5 w-5" /> };
+      case 'degraded':
+        return { id, title: 'Workload Degraded', description: `${workloadName} is running with issues`, variant: 'warning', icon: <AlertTriangle className="h-5 w-5" /> };
+    }
+  }
+
+  // Build completion events
+  if (kind === 'build_complete') {
+    const successRaw = data.success ?? e.success;
+    const success = typeof successRaw === 'boolean' ? successRaw : true;
+    const buildName = str(data.name) ?? str(e.name) ?? 'Build';
+    return success
+      ? { id, title: 'Build Complete', description: `${buildName} completed successfully`, variant: 'success', icon: <CheckCircle2 className="h-5 w-5" /> }
+      : { id, title: 'Build Failed', description: `${buildName} failed to complete`, variant: 'error', icon: <XCircle className="h-5 w-5" /> };
+  }
+
+  // Project status changes
+  if (kind === 'project_status') {
+    const status = str(data.status) ?? str(e.status);
+    const projectName = str(data.name) ?? str(e.name) ?? 'Project';
+    switch (status?.toLowerCase()) {
+      case 'ready':
+        return { id, title: 'Project Ready', description: `${projectName} is ready to use`, variant: 'success', icon: <CheckCircle2 className="h-5 w-5" /> };
+      case 'creating':
+        return { id, title: 'Creating Project', description: `${projectName} is being created`, variant: 'info', icon: <Info className="h-5 w-5" /> };
+      case 'error':
+        return { id, title: 'Project Error', description: `${projectName} encountered an error`, variant: 'error', icon: <XCircle className="h-5 w-5" /> };
+    }
+  }
+
+  // Deployment events
+  if (kind === 'deployment_ready') {
+    const name = str(data.name) ?? str(e.name) ?? 'Deployment';
+    return { id, title: 'Deployment Ready', description: `${name} is ready and accessible`, variant: 'success', icon: <CheckCircle2 className="h-5 w-5" /> };
+  }
+
+  // Error events
+  if (kind === 'error_report') {
+    const message = str(data.message) ?? str(e.message) ?? 'An error occurred';
+    return { id, title: 'Error', description: message, variant: 'error', icon: <XCircle className="h-5 w-5" />, duration: 7000 };
+  }
+
+  return null;
+}
+
 export function EventToast() {
   const [toasts, setToasts] = React.useState<ToastNotification[]>([]);
-  const { lastEvent } = useSSE(); // Use hook without filters to get all events
+  const { lastEvent } = useSSE(); // no filters — receive all events
 
-  // Process SSE events and create toast notifications
+  // Process SSE events into toast notifications.
   React.useEffect(() => {
     if (!lastEvent) return;
-
     const notification = processEvent(lastEvent);
-    if (notification) {
-      setToasts((prev) => [...prev, notification]);
-
-      // Auto-dismiss after duration (default 5 seconds)
-      const duration = notification.duration || 5000;
-      setTimeout(() => {
-        setToasts((prev) => prev.filter((t) => t.id !== notification.id));
-      }, duration);
-    }
+    if (!notification) return;
+    setToasts((prev) => [...prev, notification]);
+    // Auto-dismiss after the notification's duration (default 5s).
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== notification.id));
+    }, notification.duration || 5000);
   }, [lastEvent]);
-
-  const processEvent = (event: any): ToastNotification | null => {
-    const timestamp = Date.now();
-    const id = `toast-${timestamp}`;
-
-    // Process workload status changes
-    if (event.type === 'workload_status' || event.event_type === 'workload_status') {
-      const status = event.data?.status || event.status;
-      const workloadName = event.data?.name || event.name || 'Workload';
-
-      switch (status?.toLowerCase()) {
-        case 'running':
-          return {
-            id,
-            title: 'Workload Running',
-            description: `${workloadName} is now running successfully`,
-            variant: 'success',
-            icon: <CheckCircle2 className="h-5 w-5" />,
-          };
-        case 'failed':
-          return {
-            id,
-            title: 'Workload Failed',
-            description: `${workloadName} failed to start`,
-            variant: 'error',
-            icon: <XCircle className="h-5 w-5" />,
-          };
-        case 'pending':
-          return {
-            id,
-            title: 'Workload Pending',
-            description: `${workloadName} is being prepared`,
-            variant: 'info',
-            icon: <Info className="h-5 w-5" />,
-          };
-        case 'building':
-          return {
-            id,
-            title: 'Building Workload',
-            description: `${workloadName} is being built`,
-            variant: 'info',
-            icon: <Info className="h-5 w-5" />,
-          };
-        case 'deploying':
-          return {
-            id,
-            title: 'Deploying Workload',
-            description: `${workloadName} is being deployed`,
-            variant: 'info',
-            icon: <Info className="h-5 w-5" />,
-          };
-        case 'degraded':
-          return {
-            id,
-            title: 'Workload Degraded',
-            description: `${workloadName} is running with issues`,
-            variant: 'warning',
-            icon: <AlertTriangle className="h-5 w-5" />,
-          };
-      }
-    }
-
-    // Process build completion events
-    if (event.type === 'build_complete' || event.event_type === 'build_complete') {
-      const success = event.data?.success ?? event.success ?? true;
-      const buildName = event.data?.name || event.name || 'Build';
-
-      if (success) {
-        return {
-          id,
-          title: 'Build Complete',
-          description: `${buildName} completed successfully`,
-          variant: 'success',
-          icon: <CheckCircle2 className="h-5 w-5" />,
-        };
-      } else {
-        return {
-          id,
-          title: 'Build Failed',
-          description: `${buildName} failed to complete`,
-          variant: 'error',
-          icon: <XCircle className="h-5 w-5" />,
-        };
-      }
-    }
-
-    // Process project status changes
-    if (event.type === 'project_status' || event.event_type === 'project_status') {
-      const status = event.data?.status || event.status;
-      const projectName = event.data?.name || event.name || 'Project';
-
-      switch (status?.toLowerCase()) {
-        case 'ready':
-          return {
-            id,
-            title: 'Project Ready',
-            description: `${projectName} is ready to use`,
-            variant: 'success',
-            icon: <CheckCircle2 className="h-5 w-5" />,
-          };
-        case 'creating':
-          return {
-            id,
-            title: 'Creating Project',
-            description: `${projectName} is being created`,
-            variant: 'info',
-            icon: <Info className="h-5 w-5" />,
-          };
-        case 'error':
-          return {
-            id,
-            title: 'Project Error',
-            description: `${projectName} encountered an error`,
-            variant: 'error',
-            icon: <XCircle className="h-5 w-5" />,
-          };
-      }
-    }
-
-    // Process deployment events
-    if (event.type === 'deployment_ready' || event.event_type === 'deployment_ready') {
-      const name = event.data?.name || event.name || 'Deployment';
-      return {
-        id,
-        title: 'Deployment Ready',
-        description: `${name} is ready and accessible`,
-        variant: 'success',
-        icon: <CheckCircle2 className="h-5 w-5" />,
-      };
-    }
-
-    // Process error events
-    if (event.type === 'error_report' || event.event_type === 'error_report') {
-      const message = event.data?.message || event.message || 'An error occurred';
-      return {
-        id,
-        title: 'Error',
-        description: message,
-        variant: 'error',
-        icon: <XCircle className="h-5 w-5" />,
-        duration: 7000, // Show errors longer
-      };
-    }
-
-    return null;
-  };
 
   const removeToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));

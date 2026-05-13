@@ -21,7 +21,7 @@ export type SSEEventType =
 export interface SSEEvent {
   event_type: SSEEventType;
   timestamp: number;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // Specific event types
