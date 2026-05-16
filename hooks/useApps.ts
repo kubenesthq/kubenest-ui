@@ -96,6 +96,68 @@ export function useRemoveAppComponent(namespace: string, name: string, projectId
 }
 
 /**
+ * Set replicas on a single workload component (kn-s3n).
+ *
+ * Thin wrapper around `POST /apps/{ns}/{name}/scale`. Setting `replicas=0`
+ * suspends the workload — equivalent to per-component pause. The backend
+ * records this as a dedicated `scale` deployment-history action so the
+ * activity feed can distinguish scale events from generic patches.
+ */
+export function useScaleApp(namespace: string, name: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { componentName: string; replicas: number }) =>
+      appsApi.scale(namespace, name, projectId, {
+        component_name: vars.componentName,
+        replicas: vars.replicas,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['app', namespace, name, projectId] });
+      queryClient.invalidateQueries({ queryKey: ['apps'] });
+      queryClient.invalidateQueries({
+        queryKey: ['app-deployments', namespace, name, projectId],
+      });
+    },
+  });
+}
+
+/**
+ * Suspend every workload component in the app by setting replicas=0 (kn-s3n).
+ * Idempotent — components already at 0 are written back as-is.
+ */
+export function usePauseApp(namespace: string, name: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => appsApi.pause(namespace, name, projectId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['app', namespace, name, projectId] });
+      queryClient.invalidateQueries({ queryKey: ['apps'] });
+      queryClient.invalidateQueries({
+        queryKey: ['app-deployments', namespace, name, projectId],
+      });
+    },
+  });
+}
+
+/**
+ * Restore workload components from a paused snapshot (kn-s3n). Idempotent
+ * for already-running components.
+ */
+export function useResumeApp(namespace: string, name: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => appsApi.resume(namespace, name, projectId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['app', namespace, name, projectId] });
+      queryClient.invalidateQueries({ queryKey: ['apps'] });
+      queryClient.invalidateQueries({
+        queryKey: ['app-deployments', namespace, name, projectId],
+      });
+    },
+  });
+}
+
+/**
  * Wire a standalone addon instance's exports into this app's workload
  * components (kn-gfa). Does NOT add the addon as a StackDeploy component —
  * for that, use `useAddAppComponent` first, then attach.

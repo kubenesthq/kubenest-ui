@@ -16,8 +16,11 @@ import {
   Link2,
   Loader2,
   Pause,
+  PauseCircle,
   Play,
+  PlayCircle,
   Plus,
+  Sliders,
   RefreshCw,
   RotateCw,
   Trash2,
@@ -37,9 +40,12 @@ import {
   useDeleteApp,
   useDetachAddon,
   usePatchApp,
+  usePauseApp,
   useRedeployApp,
   useRemoveAppComponent,
+  useResumeApp,
   useRollbackApp,
+  useScaleApp,
   useSyncAppStatus,
 } from '@/hooks/useApps';
 import { useCreateStackTemplateFromApp } from '@/hooks/useStackTemplates';
@@ -52,6 +58,7 @@ import {
 } from '@/components/apps/AttachAddonDrawer';
 import { RemoveComponentDialog } from '@/components/apps/RemoveComponentDialog';
 import { SaveAsTemplateDialog } from '@/components/apps/SaveAsTemplateDialog';
+import { ScaleComponentDialog } from '@/components/apps/ScaleComponentDialog';
 import { appLogsStreamUrl } from '@/lib/api/apps';
 import { ApiClientError } from '@/lib/api-client';
 import { useAuthStore } from '@/store/auth';
@@ -124,6 +131,19 @@ interface PatchConflictState {
 
 function isWorkloadType(type: unknown): boolean {
   return typeof type === 'string' && type.toLowerCase() === 'workload';
+}
+
+/**
+ * Pull the live replica count off a read-side component. The GET /apps
+ * response delivers workload_spec as a raw CR dict with a numeric
+ * `replicas`. Returns null if the field is absent so callers can
+ * distinguish "unset" from "explicitly 0".
+ */
+function readReplicaCount(component: AppReadComponent): number | null {
+  const spec = component.workload_spec;
+  if (!spec || typeof spec !== 'object') return null;
+  const replicas = (spec as Record<string, unknown>).replicas;
+  return typeof replicas === 'number' ? replicas : null;
 }
 
 function PhaseBadge({ phase, pulsing = false }: { phase: string; pulsing?: boolean }) {
@@ -451,6 +471,9 @@ function AppDetailPageInner() {
   const attachAddon = useAttachAddon(namespace, name, projectId);
   const detachAddon = useDetachAddon(namespace, name, projectId);
   const saveAsTemplate = useCreateStackTemplateFromApp();
+  const scaleApp = useScaleApp(namespace, name, projectId);
+  const pauseApp = usePauseApp(namespace, name, projectId);
+  const resumeApp = useResumeApp(namespace, name, projectId);
 
   // Project-scoped addon instances — needed to resolve `export_ref.component`
   // back to an instance id so the detach button knows which DELETE to fire.
@@ -471,6 +494,13 @@ function AppDetailPageInner() {
   const [removeTarget, setRemoveTarget] = useState<AppReadComponent | null>(null);
   const [attachAddonOpen, setAttachAddonOpen] = useState(false);
   const [saveAsTemplateOpen, setSaveAsTemplateOpen] = useState(false);
+  // {name, currentReplicas} of the workload component the scale dialog is
+  // asking about (null = closed). Keyed by name; replicas are read from the
+  // live component spec when the user clicks the scale button.
+  const [scaleTarget, setScaleTarget] = useState<
+    | { name: string; currentReplicas: number | null }
+    | null
+  >(null);
   // {addonInstanceId, displayName, envVarCount, workloadComponentName} the
   // detach-confirm dialog is asking about (null = closed). Keyed by instance
   // id rather than name so we know which DELETE to fire.
@@ -692,6 +722,24 @@ function AppDetailPageInner() {
     return computeAggregatePhase(app.components, statusByName, app.phase);
   }, [app, staleStatuses, statusByName]);
 
+  // kn-s3n: pause/resume header buttons appear based on the live replica
+  // counts in workload_spec. Show Pause if any workload is running (>0);
+  // show Resume if any workload is suspended (=0). Apps with no workload
+  // components see neither — there's nothing to scale.
+  const workloadReplicaSummary = useMemo(() => {
+    if (!app) return { running: 0, paused: 0 };
+    let running = 0;
+    let paused = 0;
+    for (const component of app.components) {
+      if (!isWorkloadType(component.type)) continue;
+      const r = readReplicaCount(component);
+      if (r === null) continue;
+      if (r > 0) running++;
+      else paused++;
+    }
+    return { running, paused };
+  }, [app]);
+
   const saveComponentPatch = useCallback(
     (componentName: string) => {
       const draft = envDrafts[componentName];
@@ -800,6 +848,20 @@ function AppDetailPageInner() {
     );
   };
 
+  const handlePause = () => {
+    pauseApp.mutate(undefined, {
+      onSuccess: () => toast({ title: 'App paused', description: 'All workloads suspended.' }),
+      onError: (error: Error) => toast({ title: 'Pause failed', description: error.message, variant: 'error' }),
+    });
+  };
+
+  const handleResume = () => {
+    resumeApp.mutate(undefined, {
+      onSuccess: () => toast({ title: 'App resumed', description: 'Workloads restored from snapshot.' }),
+      onError: (error: Error) => toast({ title: 'Resume failed', description: error.message, variant: 'error' }),
+    });
+  };
+
   if (!projectId) {
     return (
       <div className="px-6 py-8 max-w-[900px] mx-auto">
@@ -878,6 +940,30 @@ function AppDetailPageInner() {
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <Btn variant="default" size="sm" icon={RotateCw} onClick={() => void refreshViaPoll()} disabled={syncMutation.isPending}>Refresh</Btn>
+          {workloadReplicaSummary.running > 0 && (
+            <Btn
+              variant="default"
+              size="sm"
+              icon={PauseCircle}
+              onClick={handlePause}
+              disabled={pauseApp.isPending}
+              data-testid="header-pause-app"
+            >
+              {pauseApp.isPending ? 'Pausing…' : 'Pause'}
+            </Btn>
+          )}
+          {workloadReplicaSummary.paused > 0 && (
+            <Btn
+              variant="default"
+              size="sm"
+              icon={PlayCircle}
+              onClick={handleResume}
+              disabled={resumeApp.isPending}
+              data-testid="header-resume-app"
+            >
+              {resumeApp.isPending ? 'Resuming…' : 'Resume'}
+            </Btn>
+          )}
           <Btn
             variant="default"
             size="sm"
@@ -921,6 +1007,7 @@ function AppDetailPageInner() {
           onAttachAddon={() => setAttachAddonOpen(true)}
           addonInstances={addonInstances}
           onDetachAddon={(req) => setDetachTarget(req)}
+          onScaleComponent={(req) => setScaleTarget(req)}
         />
       )}
       {tab === 'deploys' && (
@@ -1006,6 +1093,23 @@ function AppDetailPageInner() {
           toast({
             title: 'Addon attached',
             description: `${vars.envMappings.length} env var${vars.envMappings.length === 1 ? '' : 's'} wired into this app.`,
+          });
+        }}
+      />
+
+      <ScaleComponentDialog
+        open={scaleTarget !== null}
+        componentName={scaleTarget?.name ?? null}
+        currentReplicas={scaleTarget?.currentReplicas ?? null}
+        isPending={scaleApp.isPending}
+        onClose={() => setScaleTarget(null)}
+        onSubmit={async (replicas) => {
+          if (!scaleTarget) return;
+          const componentName = scaleTarget.name;
+          await scaleApp.mutateAsync({ componentName, replicas });
+          toast({
+            title: `Scaled ${componentName}`,
+            description: `Now running ${replicas} replica${replicas === 1 ? '' : 's'}.`,
           });
         }}
       />
@@ -1227,6 +1331,7 @@ function OverviewTab({
   onAttachAddon,
   addonInstances,
   onDetachAddon,
+  onScaleComponent,
 }: {
   components: AppReadComponent[];
   statuses: Record<string, LiveComponentStatus>;
@@ -1252,6 +1357,8 @@ function OverviewTab({
     workloadName: string;
     envVarCount: number;
   }) => void;
+  /** Opens the scale dialog for a workload component (kn-s3n). */
+  onScaleComponent: (req: { name: string; currentReplicas: number | null }) => void;
 }) {
   const recent = deployRows.slice(0, 5);
   return (
@@ -1272,11 +1379,16 @@ function OverviewTab({
               // (the backend rejects the last one with 422 anyway). The icon
               // sits next to the phase badge in muted style to avoid accidents.
               const canRemove = components.length > 1;
+              // kn-s3n: per-row Scale button on workload components; addons
+              // don't have a replica count so they don't get one.
+              const isWorkload = isWorkloadType(component.type);
+              const componentReplicas = isWorkload ? readReplicaCount(component) : null;
+              const isPaused = isWorkload && componentReplicas === 0;
               // kn-gfa: linked-addon chips render under workload rows when an
               // env var imports via export_ref. Groups are by referenced
               // component name so the detach button can target an addon
               // instance, not an individual env var.
-              const linkedAddons: LinkedAddonGroup[] = isWorkloadType(component.type)
+              const linkedAddons: LinkedAddonGroup[] = isWorkload
                 ? linkedAddonGroupsFor(component, addonInstances)
                 : [];
               return (
@@ -1301,8 +1413,27 @@ function OverviewTab({
                             {liveStatus?.health ?? '—'}{liveStatus?.sync ? ` · ${liveStatus.sync}` : ''}
                           </p>
                         ) : null}
-                        <PhaseBadge phase={shownPhase} pulsing={!stale && live && Boolean(liveStatus)} />
+                        {isPaused ? (
+                          <Pill tone="warn" size="sm" data-testid={`component-paused-badge-${component.name}`}>
+                            Paused
+                          </Pill>
+                        ) : (
+                          <PhaseBadge phase={shownPhase} pulsing={!stale && live && Boolean(liveStatus)} />
+                        )}
                       </div>
+                      {isWorkload && (
+                        <button
+                          type="button"
+                          onClick={() => onScaleComponent({ name: component.name, currentReplicas: componentReplicas })}
+                          data-testid={`component-scale-${component.name}`}
+                          title={`Scale ${component.name}${componentReplicas !== null ? ` (currently ${componentReplicas})` : ''}`}
+                          aria-label={`Scale ${component.name}`}
+                          className="h-7 w-7 rounded-md flex items-center justify-center hover:text-[var(--accent)] transition-colors"
+                          style={{ color: 'var(--text-4)' }}
+                        >
+                          <Sliders className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                       {canRemove && (
                         <button
                           type="button"

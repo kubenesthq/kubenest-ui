@@ -115,6 +115,32 @@ export const appsApi = {
       )}?project_id=${encodeURIComponent(projectId)}`,
     ),
 
+  /** Set replicas on a single workload component (kn-vya / kn-s3n). 0 suspends. */
+  scale: (
+    namespace: string,
+    name: string,
+    projectId: string,
+    body: { component_name: string; replicas: number },
+  ) =>
+    apiClient.post<AppRead>(
+      `/apps/${namespace}/${name}/scale?project_id=${encodeURIComponent(projectId)}`,
+      body,
+    ),
+
+  /** Set all workload components to replicas=0 (kn-9cq / kn-s3n). Idempotent. */
+  pause: (namespace: string, name: string, projectId: string) =>
+    apiClient.post<AppRead>(
+      `/apps/${namespace}/${name}/pause?project_id=${encodeURIComponent(projectId)}`,
+      {},
+    ),
+
+  /** Restore workload components from a paused snapshot (kn-9cq / kn-s3n). */
+  resume: (namespace: string, name: string, projectId: string) =>
+    apiClient.post<AppRead>(
+      `/apps/${namespace}/${name}/resume?project_id=${encodeURIComponent(projectId)}`,
+      {},
+    ),
+
   /** Wire a standalone addon instance's exports into workload components (kn-h1v / kn-gfa). */
   attachAddon: (
     namespace: string,
