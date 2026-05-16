@@ -386,50 +386,65 @@ function MyTemplateCard({
   template: StackTemplateRead;
   onDelete: () => void;
 }) {
+  // kn-c2l: the card body links to the template detail page (kn-epw); the
+  // Deploy button stays as a shortcut to the deploy form. The Delete button
+  // and the Deploy link both stopPropagation so clicks on them don't also
+  // trigger the body-level navigation.
+  const detailHref = `/stacks/${encodeURIComponent(template.namespace)}/${encodeURIComponent(template.name)}`;
   const deployHref = `/stacks/deploy?ns=${encodeURIComponent(template.namespace)}&name=${encodeURIComponent(template.name)}`;
   return (
     <Card
       flush
-      className="overflow-hidden flex flex-col"
+      className="overflow-hidden flex flex-col transition-colors hover:border-[var(--border-strong)]"
       data-testid={`stacks-my-card-${template.name}`}
     >
-      <div className="px-4 py-3 flex items-start gap-3" style={{ borderBottom: '1px solid var(--border)' }}>
-        <span className="w-8 h-8 rounded-md flex items-center justify-center shrink-0 text-base" style={{ background: 'var(--accent-soft)' }}>
-          {template.icon ?? '📦'}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-[13.5px] font-semibold truncate" style={{ color: 'var(--text)' }}>{template.name}</p>
-          <p className="text-[10.5px] font-mono" style={{ color: 'var(--text-4)' }}>
-            {template.namespace} · v{template.version}
-          </p>
-        </div>
-      </div>
-      <div className="px-4 py-3 flex-1 space-y-2">
-        {template.description ? (
-          <p className="text-[12px] line-clamp-2" style={{ color: 'var(--text-3)' }}>{template.description}</p>
-        ) : (
-          <p className="text-[12px] italic" style={{ color: 'var(--text-4)' }}>No description.</p>
-        )}
-        <div className="flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-3)' }}>
-          <span>{template.components.length} component{template.components.length === 1 ? '' : 's'}</span>
-          {template.scope && <Pill tone="default" size="sm">{template.scope}</Pill>}
-        </div>
-        {template.tags && template.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {template.tags.slice(0, 6).map((tag) => (
-              <span
-                key={tag}
-                className="px-1.5 h-5 rounded text-[10.5px] inline-flex items-center"
-                style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}
-              >
-                {tag}
-              </span>
-            ))}
+      <Link
+        href={detailHref}
+        className="block flex-1 flex flex-col"
+        data-testid={`stacks-my-card-link-${template.name}`}
+      >
+        <div className="px-4 py-3 flex items-start gap-3" style={{ borderBottom: '1px solid var(--border)' }}>
+          <span className="w-8 h-8 rounded-md flex items-center justify-center shrink-0 text-base" style={{ background: 'var(--accent-soft)' }}>
+            {template.icon ?? '📦'}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13.5px] font-semibold truncate" style={{ color: 'var(--text)' }}>{template.name}</p>
+            <p className="text-[10.5px] font-mono" style={{ color: 'var(--text-4)' }}>
+              {template.namespace} · v{template.version}
+            </p>
           </div>
-        )}
-      </div>
+        </div>
+        <div className="px-4 py-3 flex-1 space-y-2">
+          {template.description ? (
+            <p className="text-[12px] line-clamp-2" style={{ color: 'var(--text-3)' }}>{template.description}</p>
+          ) : (
+            <p className="text-[12px] italic" style={{ color: 'var(--text-4)' }}>No description.</p>
+          )}
+          <div className="flex items-center gap-3 text-[11px]" style={{ color: 'var(--text-3)' }}>
+            <span>{template.components.length} component{template.components.length === 1 ? '' : 's'}</span>
+            {template.scope && <Pill tone="default" size="sm">{template.scope}</Pill>}
+          </div>
+          {template.tags && template.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {template.tags.slice(0, 6).map((tag) => (
+                <span
+                  key={tag}
+                  className="px-1.5 h-5 rounded text-[10.5px] inline-flex items-center"
+                  style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </Link>
       <div className="px-4 py-3 flex items-center justify-between gap-2" style={{ borderTop: '1px solid var(--border)' }}>
-        <Link href={deployHref} className="flex-1">
+        <Link
+          href={deployHref}
+          className="flex-1"
+          onClick={(e) => e.stopPropagation()}
+        >
           <Btn variant="primary" size="sm" className="w-full" data-testid={`stacks-my-deploy-${template.name}`}>
             Deploy
           </Btn>
@@ -438,7 +453,10 @@ function MyTemplateCard({
           variant="ghost"
           size="sm"
           icon={Trash2}
-          onClick={onDelete}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
           aria-label={`Delete ${template.name}`}
           data-testid={`stacks-my-delete-${template.name}`}
         >
