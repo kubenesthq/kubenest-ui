@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { appsApi } from '@/lib/api/apps';
 import type {
+  AppComponent,
   AppCreate,
   AppPatch,
   ComponentSecretUpsert,
@@ -37,6 +38,29 @@ export function usePatchApp(namespace: string, name: string, projectId: string) 
   return useMutation({
     mutationFn: (body: AppPatch) =>
       appsApi.patch(namespace, name, projectId, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['app', namespace, name, projectId] });
+      queryClient.invalidateQueries({ queryKey: ['apps'] });
+      queryClient.invalidateQueries({
+        queryKey: ['app-deployments', namespace, name, projectId],
+      });
+    },
+  });
+}
+
+/**
+ * Append a new component to a running app (kn-a4l).
+ *
+ * Thin wrapper around `PATCH /apps/{ns}/{name}` with `add_components` — kept
+ * separate from `usePatchApp` so call sites read as add-vs-edit and so the
+ * invalidation set can stay scoped to the app + deploy list (no env-draft
+ * invalidation needed; the new component seeds its own draft on next render).
+ */
+export function useAddAppComponent(namespace: string, name: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (component: AppComponent) =>
+      appsApi.patch(namespace, name, projectId, { add_components: [component] }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['app', namespace, name, projectId] });
       queryClient.invalidateQueries({ queryKey: ['apps'] });

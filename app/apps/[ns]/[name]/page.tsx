@@ -27,6 +27,7 @@ import { getCluster } from '@/api/clusters';
 import { useToast } from '@/components/ui/use-toast';
 import { useSSE } from '@/hooks/useSSE';
 import {
+  useAddAppComponent,
   useApp,
   useAppDeployments,
   useDeleteApp,
@@ -35,6 +36,7 @@ import {
   useRollbackApp,
   useSyncAppStatus,
 } from '@/hooks/useApps';
+import { AddComponentDrawer } from '@/components/apps/AddComponentDrawer';
 import { appLogsStreamUrl } from '@/lib/api/apps';
 import { ApiClientError } from '@/lib/api-client';
 import { useAuthStore } from '@/store/auth';
@@ -428,9 +430,11 @@ function AppDetailPageInner() {
   const patchMutation = usePatchApp(namespace, name, projectId);
   const redeploy = useRedeployApp(namespace, name, projectId);
   const deleteApp = useDeleteApp();
+  const addComponent = useAddAppComponent(namespace, name, projectId);
 
   const [tab, setTab] = useState<TabId>('overview');
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [addComponentOpen, setAddComponentOpen] = useState(false);
   const [statusByName, setStatusByName] = useState<Record<string, LiveComponentStatus>>({});
   const [lastStatusRefreshAt, setLastStatusRefreshAt] = useState<number | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -835,6 +839,7 @@ function AppDetailPageInner() {
           namespace={namespace}
           name={name}
           projectId={projectId}
+          onAddComponent={() => setAddComponentOpen(true)}
         />
       )}
       {tab === 'deploys' && (
@@ -876,6 +881,21 @@ function AppDetailPageInner() {
         />
       )}
       {tab === 'monitoring' && <AppMonitoring namespace={namespace} name={name} projectId={projectId} />}
+
+      <AddComponentDrawer
+        open={addComponentOpen}
+        onClose={() => setAddComponentOpen(false)}
+        isPending={addComponent.isPending}
+        existingComponents={app.components}
+        existingNames={app.components.map((c) => c.name)}
+        onAdd={async (component) => {
+          await addComponent.mutateAsync(component);
+          toast({
+            title: 'Component added',
+            description: `${component.name} is being deployed.`,
+          });
+        }}
+      />
 
       {deleteOpen && (
         <div className="fixed inset-0 z-[80] flex items-start justify-center pt-[14vh]" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setDeleteOpen(false)}>
@@ -1011,6 +1031,7 @@ function OverviewTab({
   namespace,
   name,
   projectId,
+  onAddComponent,
 }: {
   components: AppReadComponent[];
   statuses: Record<string, LiveComponentStatus>;
@@ -1021,6 +1042,8 @@ function OverviewTab({
   namespace: string;
   name: string;
   projectId: string;
+  /** Opens the add-component drawer (kn-a4l). */
+  onAddComponent: () => void;
 }) {
   const recent = deployRows.slice(0, 5);
   return (
@@ -1063,6 +1086,20 @@ function OverviewTab({
               );
             })
           )}
+          {/*
+            kn-a4l: dashed "Add component" affordance lives at the bottom of
+            the existing list — matches the create-app builder so users get
+            the same mental model when editing a running app.
+          */}
+          <button
+            type="button"
+            onClick={onAddComponent}
+            data-testid="overview-add-component"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md border-2 border-dashed text-[12.5px] hover:opacity-80 transition-opacity"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-3)' }}
+          >
+            <Plus className="h-3.5 w-3.5" /> Add a component
+          </button>
         </div>
       </Card>
 

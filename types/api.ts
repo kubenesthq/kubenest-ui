@@ -493,7 +493,15 @@ export interface AppCreate {
 }
 
 export interface AppPatch {
+  // Patch-by-name on existing components (full spec replacement for that name).
   components?: AppComponent[];
+  // New components to append (kn-coa). Names must not collide with components
+  // that survive any remove_component_names in the same request.
+  add_components?: AppComponent[];
+  // Existing components to delete (kn-coa). The app must retain at least one
+  // component after removal, and no remaining component may export_ref a
+  // removed component.
+  remove_component_names?: string[];
   timeout?: string;
 }
 
