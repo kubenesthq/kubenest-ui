@@ -4,11 +4,9 @@ import { artifact } from './fixtures';
 /**
  * kn-fxe — Remove-component confirmation dialog on the app detail page.
  *
- * Per AGENTS.md §7 / brief §5: no mocks, no `page.route()` stubs on the
- * thing under test. The PATCH still hits the real backend; we only abort
- * /sync-status polling traffic because the headless detail page falls back
- * to a polling storm that saturates Chrome's per-host socket pool — same
- * workaround as kn-a4l (tracked in kn-cen).
+ * Per AGENTS.md §7 / brief §5: no mocks. The PATCH and GET round-trip the
+ * real backend. (The earlier sync-status-abort workaround was removed once
+ * kn-cen fixed the underlying polling storm.)
  *
  * Coverage:
  *  - single-component app hides the Remove button (last-component guard).
@@ -78,11 +76,6 @@ test.describe('app remove component (kn-fxe)', () => {
     const appName = `kn-fxe-solo-${Date.now().toString(36)}`;
     await createApp(page, ctx, appName, [{ name: 'web', image: 'nginx:1.27-alpine' }]);
 
-    // See AGENTS-rule note in the file header.
-    await page.route(/\/api\/v1\/apps\/[^/]+\/[^/]+\/sync-status/, (route) => {
-      void route.abort('connectionclosed');
-    });
-
     try {
       await page.goto(`/apps/${ctx.namespace}/${appName}?project_id=${ctx.projectId}`);
       await expect(page.getByTestId('component-status-row-web')).toBeVisible({ timeout: 30_000 });
@@ -105,10 +98,6 @@ test.describe('app remove component (kn-fxe)', () => {
       { name: 'web', image: 'nginx:1.27-alpine', port: 8080 },
       { name: 'cache', image: 'redis:7-alpine', port: 6379 },
     ]);
-
-    await page.route(/\/api\/v1\/apps\/[^/]+\/[^/]+\/sync-status/, (route) => {
-      void route.abort('connectionclosed');
-    });
 
     try {
       await page.goto(`/apps/${ctx.namespace}/${appName}?project_id=${ctx.projectId}`);

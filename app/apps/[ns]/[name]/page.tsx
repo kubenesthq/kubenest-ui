@@ -526,23 +526,47 @@ function AppDetailPageInner() {
     setStatusError(null);
   }, []);
 
+  // kn-cen: stabilise refreshViaPoll by pulling `mutateAsync` out of the
+  // useMutation result (the function reference itself IS stable per render in
+  // TanStack Query v5; the surrounding object reference is not). Without
+  // this, refreshViaPoll changed every render → the kick-off useEffect below
+  // re-fired every render → infinite /sync-status storm that exhausted
+  // Chrome's per-host socket pool and starved foreground PATCHes.
+  const syncMutateAsync = syncMutation.mutateAsync;
+  // Stop firing /sync-status once we know the app doesn't exist (newly
+  // deleted, wrong cluster, race during DELETE). Without this guard, a
+  // transient 404 fed the same render-loop noise and never converged.
+  const [syncDisabled, setSyncDisabled] = useState(false);
   const refreshViaPoll = useCallback(async () => {
+    if (syncDisabled) return;
     try {
-      const data = await syncMutation.mutateAsync();
+      const data = await syncMutateAsync();
       applySyncStatus(data);
     } catch (error) {
-      setStatusError(error instanceof Error ? error.message : 'Status refresh failed');
+      const message = error instanceof Error ? error.message : 'Status refresh failed';
+      setStatusError(message);
+      // One-shot disable on a permanent miss; the polling effect tears
+      // down on the next render once fallbackPollingActive flips false.
+      if (error instanceof ApiClientError && error.status === 404) {
+        setSyncDisabled(true);
+      }
     }
-  }, [applySyncStatus, syncMutation]);
+  }, [applySyncStatus, syncMutateAsync, syncDisabled]);
 
   // Kick off the initial status poll when the app identity is known.
+  // refreshViaPoll is intentionally excluded from the deps — it depends on
+  // syncDisabled and would cause the effect to re-fire each time the flag
+  // flips, which is the same dependency-driven storm kn-cen is fixing. The
+  // initial poll only needs to run when the app identity changes.
   useEffect(() => {
     if (!projectId || !namespace || !name) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- refreshViaPoll writes the status cache; it's a side-effect, not derived render state
+    setSyncDisabled(false); // re-enable when the user navigates to a different app
     void refreshViaPoll();
-  }, [name, namespace, projectId, refreshViaPoll]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name, namespace, projectId]);
 
-  const fallbackPollingActive = !sse.connected || sse.reconnecting || Boolean(sse.error);
+  const fallbackPollingActive =
+    !syncDisabled && (!sse.connected || sse.reconnecting || Boolean(sse.error));
 
   useEffect(() => {
     if (!projectId || !namespace || !name) return;
@@ -557,7 +581,6 @@ function AppDetailPageInner() {
   useEffect(() => {
     const app = appQuery.data;
     if (!app) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing local UI status state from the loaded app document on change
     setAppSync(normalizeSyncStatus(app.sync));
     setStatusByName((prev) => {
       const next = { ...prev };
@@ -590,7 +613,6 @@ function AppDetailPageInner() {
 
     const nextSync = normalizeSyncStatus(payload.sync ?? event.sync);
     if (nextSync) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- applying a live SSE status event to local state
       setAppSync(nextSync);
       setLastStatusRefreshAt(Date.now());
     }
@@ -630,7 +652,6 @@ function AppDetailPageInner() {
   useEffect(() => {
     if (!patchConflict) return;
     if (appSync?.driftClass !== 'blocked_sync') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- reconciling a UI banner to the current drift state
       setPatchConflict(null);
     }
   }, [appSync, patchConflict]);
@@ -640,7 +661,6 @@ function AppDetailPageInner() {
     const app = appQuery.data;
     if (!app) return;
     const rows = deploymentsPreview.data?.data ?? [];
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot seeding of editable env drafts from loaded data
     setEnvDrafts((prev) => {
       const next = { ...prev };
       let changed = false;

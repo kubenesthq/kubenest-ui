@@ -4,11 +4,10 @@ import { artifact } from './fixtures';
 /**
  * kn-gfa — Attach-addon drawer + detach controls on the app detail page.
  *
- * Per AGENTS.md §7 / brief §5: no mocks of the API under test. The
- * /attach-addon round-trip and the addon-instance/definition fetches all
- * hit the live control plane. We only `page.route` away /sync-status
- * background polling (kn-cen workaround) to keep Chrome's socket pool from
- * starving the foreground requests.
+ * Per AGENTS.md §7 / brief §5: no mocks. The /attach-addon round-trip and
+ * the addon-instance/definition fetches all hit the live control plane.
+ * (The earlier sync-status-abort workaround was removed once kn-cen fixed
+ * the underlying polling storm.)
  *
  * The detach flow assumes the addon instance is reachable by its `name` field
  * (the backend resolves linked addons by name, which matches how the operator
@@ -117,12 +116,6 @@ test.describe('app attach addon (kn-gfa)', () => {
 
     const appName = `kn-gfa-app-${Date.now().toString(36)}`;
     await createAppWithWeb(page, ctx, appName);
-
-    // Pre-existing fallback-polling storm (kn-cen) — drop that traffic so the
-    // foreground attach/detach POST/DELETE don't compete for sockets.
-    await page.route(/\/api\/v1\/apps\/[^/]+\/[^/]+\/sync-status/, (route) => {
-      void route.abort('connectionclosed');
-    });
 
     try {
       await page.goto(`/apps/${ctx.namespace}/${appName}?project_id=${ctx.projectId}`);

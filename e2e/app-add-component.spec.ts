@@ -123,17 +123,6 @@ test.describe('app add component (kn-a4l)', () => {
     const appName = `kn-a4l-add-${Date.now().toString(36)}`;
     await createBaseApp(page, ctx, appName);
 
-    // The detail page polls /sync-status aggressively when SSE doesn't
-    // establish in headless mode. That polling has nothing to do with this
-    // bead and saturates Chrome's per-host socket pool, which can starve the
-    // PATCH we're actually testing on ERR_INSUFFICIENT_RESOURCES. Fail the
-    // polling fast so its sockets release — this is NOT mocking the thing
-    // under test (PATCH still hits the real backend); it just silences a
-    // pre-existing noisy background loop. Tracked separately for a real fix.
-    await page.route(/\/api\/v1\/apps\/[^/]+\/[^/]+\/sync-status/, (route) => {
-      void route.abort('connectionclosed');
-    });
-
     try {
       await page.goto(`/apps/${ctx.namespace}/${appName}?project_id=${ctx.projectId}`);
       await page.waitForURL(/\/apps\/[^/]+\/[^?]+\?project_id=/, { timeout: 30_000 });
