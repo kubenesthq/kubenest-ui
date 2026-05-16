@@ -1,5 +1,6 @@
 import { apiClient } from '../api-client';
 import type {
+  AppAddonAttachRequest,
   AppCreate,
   AppList,
   AppPatch,
@@ -112,6 +113,29 @@ export const appsApi = {
       `/apps/${namespace}/${name}/components/${component}/secrets/${encodeURIComponent(
         key,
       )}?project_id=${encodeURIComponent(projectId)}`,
+    ),
+
+  /** Wire a standalone addon instance's exports into workload components (kn-h1v / kn-gfa). */
+  attachAddon: (
+    namespace: string,
+    name: string,
+    projectId: string,
+    body: AppAddonAttachRequest,
+  ) =>
+    apiClient.post<AppRead>(
+      `/apps/${namespace}/${name}/attach-addon?project_id=${encodeURIComponent(projectId)}`,
+      body,
+    ),
+
+  /** Remove all env vars on this app's workloads that exportRef the addon (kn-h1v / kn-gfa). */
+  detachAddon: (
+    namespace: string,
+    name: string,
+    projectId: string,
+    addonInstanceId: string,
+  ) =>
+    apiClient.delete<AppRead>(
+      `/apps/${namespace}/${name}/attach-addon/${addonInstanceId}?project_id=${encodeURIComponent(projectId)}`,
     ),
 };
 

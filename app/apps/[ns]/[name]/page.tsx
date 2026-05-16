@@ -12,6 +12,7 @@ import {
   Database,
   Download,
   History,
+  Link2,
   Loader2,
   Pause,
   Play,
@@ -20,6 +21,7 @@ import {
   RotateCw,
   Trash2,
   X,
+  XCircle,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { getProject } from '@/api/projects';
@@ -30,14 +32,22 @@ import {
   useAddAppComponent,
   useApp,
   useAppDeployments,
+  useAttachAddon,
   useDeleteApp,
+  useDetachAddon,
   usePatchApp,
   useRedeployApp,
   useRemoveAppComponent,
   useRollbackApp,
   useSyncAppStatus,
 } from '@/hooks/useApps';
+import { addonInstancesApi } from '@/lib/api/addons';
 import { AddComponentDrawer } from '@/components/apps/AddComponentDrawer';
+import {
+  AttachAddonDrawer,
+  linkedAddonGroupsFor,
+  type LinkedAddonGroup,
+} from '@/components/apps/AttachAddonDrawer';
 import { RemoveComponentDialog } from '@/components/apps/RemoveComponentDialog';
 import { appLogsStreamUrl } from '@/lib/api/apps';
 import { ApiClientError } from '@/lib/api-client';
@@ -45,6 +55,7 @@ import { useAuthStore } from '@/store/auth';
 import { Btn, Card, Pill, SectionLabel, type PillTone } from '@/components/shell/primitives';
 import { AppMonitoring } from '@/components/metrics/Metrics';
 import type {
+  AddonInstance,
   AppComponent,
   DriftDetail,
   AppPhase,
@@ -434,12 +445,39 @@ function AppDetailPageInner() {
   const deleteApp = useDeleteApp();
   const addComponent = useAddAppComponent(namespace, name, projectId);
   const removeComponent = useRemoveAppComponent(namespace, name, projectId);
+  const attachAddon = useAttachAddon(namespace, name, projectId);
+  const detachAddon = useDetachAddon(namespace, name, projectId);
+
+  // Project-scoped addon instances — needed to resolve `export_ref.component`
+  // back to an instance id so the detach button knows which DELETE to fire.
+  const addonInstancesQuery = useQuery({
+    queryKey: ['addon-instances', projectId],
+    queryFn: () => addonInstancesApi.list(projectId),
+    enabled: Boolean(projectId),
+  });
+  const addonInstances = useMemo(
+    () => addonInstancesQuery.data?.data ?? [],
+    [addonInstancesQuery.data],
+  );
 
   const [tab, setTab] = useState<TabId>('overview');
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [addComponentOpen, setAddComponentOpen] = useState(false);
   // Which component is the remove-confirm dialog asking about (null = closed).
   const [removeTarget, setRemoveTarget] = useState<AppReadComponent | null>(null);
+  const [attachAddonOpen, setAttachAddonOpen] = useState(false);
+  // {addonInstanceId, displayName, envVarCount, workloadComponentName} the
+  // detach-confirm dialog is asking about (null = closed). Keyed by instance
+  // id rather than name so we know which DELETE to fire.
+  const [detachTarget, setDetachTarget] = useState<
+    | {
+        addonInstanceId: string;
+        addonComponentName: string;
+        workloadName: string;
+        envVarCount: number;
+      }
+    | null
+  >(null);
   const [statusByName, setStatusByName] = useState<Record<string, LiveComponentStatus>>({});
   const [lastStatusRefreshAt, setLastStatusRefreshAt] = useState<number | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -846,6 +884,9 @@ function AppDetailPageInner() {
           projectId={projectId}
           onAddComponent={() => setAddComponentOpen(true)}
           onRemoveComponent={(c) => setRemoveTarget(c)}
+          onAttachAddon={() => setAttachAddonOpen(true)}
+          addonInstances={addonInstances}
+          onDetachAddon={(req) => setDetachTarget(req)}
         />
       )}
       {tab === 'deploys' && (
@@ -919,6 +960,77 @@ function AppDetailPageInner() {
           });
         }}
       />
+
+      <AttachAddonDrawer
+        open={attachAddonOpen}
+        onClose={() => setAttachAddonOpen(false)}
+        isPending={attachAddon.isPending}
+        projectId={projectId}
+        workloadComponents={app.components.filter((c) => isWorkloadType(c.type))}
+        onAttach={async (vars) => {
+          await attachAddon.mutateAsync(vars);
+          toast({
+            title: 'Addon attached',
+            description: `${vars.envMappings.length} env var${vars.envMappings.length === 1 ? '' : 's'} wired into this app.`,
+          });
+        }}
+      />
+
+      {detachTarget && (
+        <div
+          className="fixed inset-0 z-[80] flex items-start justify-center pt-[14vh]"
+          style={{ background: 'rgba(0,0,0,0.4)' }}
+          onClick={() => !detachAddon.isPending && setDetachTarget(null)}
+          role="presentation"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: 'var(--surface)', borderColor: 'var(--border)', boxShadow: 'var(--shadow-pop)', width: 480 }}
+            className="rounded-xl border anim-slide-up p-4"
+            role="dialog"
+            aria-label={`Detach addon ${detachTarget.addonComponentName}`}
+            data-testid="detach-addon-dialog"
+          >
+            <div className="text-[14px] font-semibold mb-1" style={{ color: 'var(--text)' }}>
+              Detach {detachTarget.addonComponentName}?
+            </div>
+            <p className="text-[12.5px] mb-3" style={{ color: 'var(--text-3)' }}>
+              This removes {detachTarget.envVarCount} env var{detachTarget.envVarCount === 1 ? '' : 's'} that {detachTarget.workloadName} reads from <span className="font-medium" style={{ color: 'var(--text-2)' }}>{detachTarget.addonComponentName}</span>. The addon instance itself is left running.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" size="sm" onClick={() => setDetachTarget(null)} disabled={detachAddon.isPending}>Cancel</Btn>
+              <Btn
+                variant="danger"
+                size="sm"
+                disabled={detachAddon.isPending}
+                onClick={() => {
+                  const id = detachTarget.addonInstanceId;
+                  const displayName = detachTarget.addonComponentName;
+                  detachAddon.mutate(id, {
+                    onSuccess: () => {
+                      setDetachTarget(null);
+                      toast({
+                        title: 'Addon detached',
+                        description: `Env vars referencing ${displayName} removed from this app.`,
+                      });
+                    },
+                    onError: (err: Error) => {
+                      toast({
+                        title: 'Detach failed',
+                        description: err.message,
+                        variant: 'error',
+                      });
+                    },
+                  });
+                }}
+                data-testid="detach-addon-confirm"
+              >
+                {detachAddon.isPending ? 'Detaching…' : 'Detach'}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
 
       {deleteOpen && (
         <div className="fixed inset-0 z-[80] flex items-start justify-center pt-[14vh]" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setDeleteOpen(false)}>
@@ -1056,6 +1168,9 @@ function OverviewTab({
   projectId,
   onAddComponent,
   onRemoveComponent,
+  onAttachAddon,
+  addonInstances,
+  onDetachAddon,
 }: {
   components: AppReadComponent[];
   statuses: Record<string, LiveComponentStatus>;
@@ -1070,6 +1185,17 @@ function OverviewTab({
   onAddComponent: () => void;
   /** Opens the remove-component confirmation dialog for the given row (kn-fxe). */
   onRemoveComponent: (component: AppReadComponent) => void;
+  /** Opens the attach-addon drawer (kn-gfa). */
+  onAttachAddon: () => void;
+  /** Project-scoped addon instances — used to resolve linked addon chips → instance id. */
+  addonInstances: AddonInstance[];
+  /** Opens the detach-addon confirmation dialog for the given linked addon (kn-gfa). */
+  onDetachAddon: (req: {
+    addonInstanceId: string;
+    addonComponentName: string;
+    workloadName: string;
+    envVarCount: number;
+  }) => void;
 }) {
   const recent = deployRows.slice(0, 5);
   return (
@@ -1090,61 +1216,125 @@ function OverviewTab({
               // (the backend rejects the last one with 422 anyway). The icon
               // sits next to the phase badge in muted style to avoid accidents.
               const canRemove = components.length > 1;
+              // kn-gfa: linked-addon chips render under workload rows when an
+              // env var imports via export_ref. Groups are by referenced
+              // component name so the detach button can target an addon
+              // instance, not an individual env var.
+              const linkedAddons: LinkedAddonGroup[] = isWorkloadType(component.type)
+                ? linkedAddonGroupsFor(component, addonInstances)
+                : [];
               return (
                 <div
                   key={component.name}
-                  className="flex items-center justify-between gap-3 rounded-md px-3 py-2"
+                  className="rounded-md px-3 py-2 space-y-1.5"
                   style={{ border: '1px solid var(--border)' }}
                   data-testid={`component-status-row-${component.name}`}
                 >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <ComponentIcon type={component.type} />
-                    <div className="min-w-0">
-                      <p className="text-[12.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{component.name}</p>
-                      <p className="text-[10.5px] capitalize" style={{ color: 'var(--text-3)' }}>{component.type}</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <ComponentIcon type={component.type} />
+                      <div className="min-w-0">
+                        <p className="text-[12.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{component.name}</p>
+                        <p className="text-[10.5px] capitalize" style={{ color: 'var(--text-3)' }}>{component.type}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-right">
+                        {liveStatus?.health || liveStatus?.sync ? (
+                          <p className="text-[10.5px] mb-1" style={{ color: 'var(--text-3)' }}>
+                            {liveStatus?.health ?? '—'}{liveStatus?.sync ? ` · ${liveStatus.sync}` : ''}
+                          </p>
+                        ) : null}
+                        <PhaseBadge phase={shownPhase} pulsing={!stale && live && Boolean(liveStatus)} />
+                      </div>
+                      {canRemove && (
+                        <button
+                          type="button"
+                          onClick={() => onRemoveComponent(component)}
+                          data-testid={`component-remove-${component.name}`}
+                          title={`Remove ${component.name}`}
+                          aria-label={`Remove ${component.name}`}
+                          className="h-7 w-7 rounded-md flex items-center justify-center hover:text-[var(--err)] transition-colors"
+                          style={{ color: 'var(--text-4)' }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="text-right">
-                      {liveStatus?.health || liveStatus?.sync ? (
-                        <p className="text-[10.5px] mb-1" style={{ color: 'var(--text-3)' }}>
-                          {liveStatus?.health ?? '—'}{liveStatus?.sync ? ` · ${liveStatus.sync}` : ''}
-                        </p>
-                      ) : null}
-                      <PhaseBadge phase={shownPhase} pulsing={!stale && live && Boolean(liveStatus)} />
+                  {linkedAddons.length > 0 && (
+                    <div
+                      className="flex flex-wrap items-center gap-1.5 pt-1"
+                      style={{ borderTop: '1px dashed var(--border)' }}
+                      data-testid={`component-linked-addons-${component.name}`}
+                    >
+                      <span className="text-[10.5px] uppercase tracking-wider" style={{ color: 'var(--text-4)' }}>
+                        Linked
+                      </span>
+                      {linkedAddons.map((group) => (
+                        <span
+                          key={group.componentName}
+                          className="inline-flex items-center gap-1 h-6 px-1.5 rounded-md text-[10.5px] font-mono"
+                          style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}
+                          title={group.envVars.map((e) => `${e.envVarName} ← ${e.exportKey}`).join('\n')}
+                          data-testid={`component-linked-addon-${component.name}-${group.componentName}`}
+                        >
+                          <Link2 className="h-3 w-3" />
+                          {group.componentName}
+                          <span style={{ color: 'var(--text-3)' }}>
+                            ({group.envVars.length})
+                          </span>
+                          {group.addonInstanceId ? (
+                            <button
+                              type="button"
+                              onClick={() => onDetachAddon({
+                                addonInstanceId: group.addonInstanceId!,
+                                addonComponentName: group.componentName,
+                                workloadName: component.name,
+                                envVarCount: group.envVars.length,
+                              })}
+                              className="hover:opacity-70 ml-0.5"
+                              title={`Detach ${group.componentName}`}
+                              aria-label={`Detach ${group.componentName} from ${component.name}`}
+                              data-testid={`component-detach-${component.name}-${group.componentName}`}
+                            >
+                              <XCircle className="h-3 w-3" />
+                            </button>
+                          ) : null}
+                        </span>
+                      ))}
                     </div>
-                    {canRemove && (
-                      <button
-                        type="button"
-                        onClick={() => onRemoveComponent(component)}
-                        data-testid={`component-remove-${component.name}`}
-                        title={`Remove ${component.name}`}
-                        aria-label={`Remove ${component.name}`}
-                        className="h-7 w-7 rounded-md flex items-center justify-center hover:text-[var(--err)] transition-colors"
-                        style={{ color: 'var(--text-4)' }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
+                  )}
                 </div>
               );
             })
           )}
           {/*
-            kn-a4l: dashed "Add component" affordance lives at the bottom of
-            the existing list — matches the create-app builder so users get
-            the same mental model when editing a running app.
+            kn-a4l + kn-gfa: dashed-border affordances at the bottom of the
+            list. Add-a-component creates a brand-new StackDeploy component;
+            Attach-an-addon wires env vars from an addon that already exists
+            in this project (without making it a component of this app).
           */}
-          <button
-            type="button"
-            onClick={onAddComponent}
-            data-testid="overview-add-component"
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md border-2 border-dashed text-[12.5px] hover:opacity-80 transition-opacity"
-            style={{ borderColor: 'var(--border)', color: 'var(--text-3)' }}
-          >
-            <Plus className="h-3.5 w-3.5" /> Add a component
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button
+              type="button"
+              onClick={onAddComponent}
+              data-testid="overview-add-component"
+              className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-md border-2 border-dashed text-[12.5px] hover:opacity-80 transition-opacity"
+              style={{ borderColor: 'var(--border)', color: 'var(--text-3)' }}
+            >
+              <Plus className="h-3.5 w-3.5" /> Add a component
+            </button>
+            <button
+              type="button"
+              onClick={onAttachAddon}
+              data-testid="overview-attach-addon"
+              className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-md border-2 border-dashed text-[12.5px] hover:opacity-80 transition-opacity"
+              style={{ borderColor: 'var(--border)', color: 'var(--text-3)' }}
+            >
+              <Database className="h-3.5 w-3.5" /> Attach an addon
+            </button>
+          </div>
         </div>
       </Card>
 

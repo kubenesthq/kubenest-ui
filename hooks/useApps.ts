@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { appsApi } from '@/lib/api/apps';
 import type {
+  AddonEnvMapping,
   AppComponent,
   AppCreate,
   AppPatch,
@@ -87,6 +88,46 @@ export function useRemoveAppComponent(namespace: string, name: string, projectId
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['app', namespace, name, projectId] });
       queryClient.invalidateQueries({ queryKey: ['apps'] });
+      queryClient.invalidateQueries({
+        queryKey: ['app-deployments', namespace, name, projectId],
+      });
+    },
+  });
+}
+
+/**
+ * Wire a standalone addon instance's exports into this app's workload
+ * components (kn-gfa). Does NOT add the addon as a StackDeploy component —
+ * for that, use `useAddAppComponent` first, then attach.
+ */
+export function useAttachAddon(namespace: string, name: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { addonInstanceId: string; envMappings: AddonEnvMapping[] }) =>
+      appsApi.attachAddon(namespace, name, projectId, {
+        addon_instance_id: vars.addonInstanceId,
+        env_mappings: vars.envMappings,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['app', namespace, name, projectId] });
+      queryClient.invalidateQueries({
+        queryKey: ['app-deployments', namespace, name, projectId],
+      });
+    },
+  });
+}
+
+/**
+ * Remove every env var on this app's workload components that exportRefs
+ * the given addon instance (kn-gfa). Returns 404 if nothing was attached.
+ */
+export function useDetachAddon(namespace: string, name: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (addonInstanceId: string) =>
+      appsApi.detachAddon(namespace, name, projectId, addonInstanceId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['app', namespace, name, projectId] });
       queryClient.invalidateQueries({
         queryKey: ['app-deployments', namespace, name, projectId],
       });

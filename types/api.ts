@@ -492,6 +492,19 @@ export interface AppCreate {
   timeout?: string;
 }
 
+/** One env-var injection in an addon-attach request (kn-h1v). */
+export interface AddonEnvMapping {
+  workload_component: string;
+  env_var_name: string;
+  export_key: string;
+}
+
+/** Body for POST /apps/{ns}/{name}/attach-addon (kn-h1v). */
+export interface AppAddonAttachRequest {
+  addon_instance_id: string;
+  env_mappings: AddonEnvMapping[];
+}
+
 export interface AppPatch {
   // Patch-by-name on existing components (full spec replacement for that name).
   components?: AppComponent[];

@@ -21,7 +21,8 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, Loader2, Trash2 } from 'lucide-react';
 import { Btn } from '@/components/shell/primitives';
 import { ApiClientError } from '@/lib/api-client';
-import type { AppEnvVar, AppReadComponent } from '@/types/api';
+import { extractExportRef } from './AttachAddonDrawer';
+import type { AppReadComponent } from '@/types/api';
 
 export interface ExportRefRef {
   workloadName: string;
@@ -47,13 +48,13 @@ export function findExportRefDependencies(
     if (!Array.isArray(env)) continue;
     for (const entry of env) {
       if (!entry || typeof entry !== 'object') continue;
-      const envVar = entry as Partial<AppEnvVar>;
-      const ref = envVar.export_ref;
-      if (ref && typeof ref === 'object' && ref.component === targetName) {
+      const envObj = entry as Record<string, unknown>;
+      const ref = extractExportRef(envObj);
+      if (ref && ref.component === targetName) {
         refs.push({
           workloadName: component.name,
-          envVarName: envVar.name ?? '(unnamed)',
-          exportKey: ref.export_key,
+          envVarName: typeof envObj.name === 'string' ? envObj.name : '(unnamed)',
+          exportKey: ref.exportKey,
         });
       }
     }
