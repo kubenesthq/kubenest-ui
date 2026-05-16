@@ -71,6 +71,29 @@ export function useAddAppComponent(namespace: string, name: string, projectId: s
   });
 }
 
+/**
+ * Drop a component from a running app (kn-fxe).
+ *
+ * Thin wrapper around `PATCH /apps/{ns}/{name}` with
+ * `remove_component_names`. The backend validates that at least one
+ * component remains and that no remaining component's `export_ref`
+ * pointed at the removed one (returns 422 otherwise).
+ */
+export function useRemoveAppComponent(namespace: string, name: string, projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (componentName: string) =>
+      appsApi.patch(namespace, name, projectId, { remove_component_names: [componentName] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['app', namespace, name, projectId] });
+      queryClient.invalidateQueries({ queryKey: ['apps'] });
+      queryClient.invalidateQueries({
+        queryKey: ['app-deployments', namespace, name, projectId],
+      });
+    },
+  });
+}
+
 export function useDeleteApp() {
   const queryClient = useQueryClient();
   return useMutation({

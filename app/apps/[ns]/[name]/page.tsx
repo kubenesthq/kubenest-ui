@@ -33,10 +33,12 @@ import {
   useDeleteApp,
   usePatchApp,
   useRedeployApp,
+  useRemoveAppComponent,
   useRollbackApp,
   useSyncAppStatus,
 } from '@/hooks/useApps';
 import { AddComponentDrawer } from '@/components/apps/AddComponentDrawer';
+import { RemoveComponentDialog } from '@/components/apps/RemoveComponentDialog';
 import { appLogsStreamUrl } from '@/lib/api/apps';
 import { ApiClientError } from '@/lib/api-client';
 import { useAuthStore } from '@/store/auth';
@@ -431,10 +433,13 @@ function AppDetailPageInner() {
   const redeploy = useRedeployApp(namespace, name, projectId);
   const deleteApp = useDeleteApp();
   const addComponent = useAddAppComponent(namespace, name, projectId);
+  const removeComponent = useRemoveAppComponent(namespace, name, projectId);
 
   const [tab, setTab] = useState<TabId>('overview');
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [addComponentOpen, setAddComponentOpen] = useState(false);
+  // Which component is the remove-confirm dialog asking about (null = closed).
+  const [removeTarget, setRemoveTarget] = useState<AppReadComponent | null>(null);
   const [statusByName, setStatusByName] = useState<Record<string, LiveComponentStatus>>({});
   const [lastStatusRefreshAt, setLastStatusRefreshAt] = useState<number | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -840,6 +845,7 @@ function AppDetailPageInner() {
           name={name}
           projectId={projectId}
           onAddComponent={() => setAddComponentOpen(true)}
+          onRemoveComponent={(c) => setRemoveTarget(c)}
         />
       )}
       {tab === 'deploys' && (
@@ -893,6 +899,23 @@ function AppDetailPageInner() {
           toast({
             title: 'Component added',
             description: `${component.name} is being deployed.`,
+          });
+        }}
+      />
+
+      <RemoveComponentDialog
+        open={removeTarget !== null}
+        componentName={removeTarget?.name ?? null}
+        componentType={
+          removeTarget ? (removeTarget.type === 'addon' ? 'addon' : 'workload') : null
+        }
+        allComponents={app.components}
+        onClose={() => setRemoveTarget(null)}
+        onConfirm={async (name) => {
+          await removeComponent.mutateAsync(name);
+          toast({
+            title: 'Component removed',
+            description: `${name} has been deleted from this app.`,
           });
         }}
       />
@@ -1032,6 +1055,7 @@ function OverviewTab({
   name,
   projectId,
   onAddComponent,
+  onRemoveComponent,
 }: {
   components: AppReadComponent[];
   statuses: Record<string, LiveComponentStatus>;
@@ -1044,6 +1068,8 @@ function OverviewTab({
   projectId: string;
   /** Opens the add-component drawer (kn-a4l). */
   onAddComponent: () => void;
+  /** Opens the remove-component confirmation dialog for the given row (kn-fxe). */
+  onRemoveComponent: (component: AppReadComponent) => void;
 }) {
   const recent = deployRows.slice(0, 5);
   return (
@@ -1060,6 +1086,10 @@ function OverviewTab({
             components.map((component) => {
               const liveStatus = statuses[component.name];
               const shownPhase = stale ? 'Stale' : liveStatus?.phase ?? 'Pending';
+              // kn-fxe: only offer Remove when there's more than one component
+              // (the backend rejects the last one with 422 anyway). The icon
+              // sits next to the phase badge in muted style to avoid accidents.
+              const canRemove = components.length > 1;
               return (
                 <div
                   key={component.name}
@@ -1074,13 +1104,28 @@ function OverviewTab({
                       <p className="text-[10.5px] capitalize" style={{ color: 'var(--text-3)' }}>{component.type}</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    {liveStatus?.health || liveStatus?.sync ? (
-                      <p className="text-[10.5px] mb-1" style={{ color: 'var(--text-3)' }}>
-                        {liveStatus?.health ?? '—'}{liveStatus?.sync ? ` · ${liveStatus.sync}` : ''}
-                      </p>
-                    ) : null}
-                    <PhaseBadge phase={shownPhase} pulsing={!stale && live && Boolean(liveStatus)} />
+                  <div className="flex items-center gap-2">
+                    <div className="text-right">
+                      {liveStatus?.health || liveStatus?.sync ? (
+                        <p className="text-[10.5px] mb-1" style={{ color: 'var(--text-3)' }}>
+                          {liveStatus?.health ?? '—'}{liveStatus?.sync ? ` · ${liveStatus.sync}` : ''}
+                        </p>
+                      ) : null}
+                      <PhaseBadge phase={shownPhase} pulsing={!stale && live && Boolean(liveStatus)} />
+                    </div>
+                    {canRemove && (
+                      <button
+                        type="button"
+                        onClick={() => onRemoveComponent(component)}
+                        data-testid={`component-remove-${component.name}`}
+                        title={`Remove ${component.name}`}
+                        aria-label={`Remove ${component.name}`}
+                        className="h-7 w-7 rounded-md flex items-center justify-center hover:text-[var(--err)] transition-colors"
+                        style={{ color: 'var(--text-4)' }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               );

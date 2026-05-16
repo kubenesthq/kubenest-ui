@@ -530,6 +530,13 @@ export interface SyncDriftStatus {
 export interface AppReadComponent {
   name: string;
   type: AppComponentType;
+  // Backend now returns these (kn-coa / df6916f); kept optional so older
+  // payloads degrade gracefully — callers that need them must null-check.
+  // Typed as Record<string, unknown> rather than WorkloadSpec/AddonSpec
+  // because the live CR dict uses camelCased keys that aren't fully modelled
+  // here; consumers normalize as needed.
+  workload_spec?: Record<string, unknown> | null;
+  addon_spec?: Record<string, unknown> | null;
 }
 
 export interface AppRead {
