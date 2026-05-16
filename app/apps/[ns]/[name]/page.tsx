@@ -12,6 +12,7 @@ import {
   Database,
   Download,
   History,
+  Layers,
   Link2,
   Loader2,
   Pause,
@@ -41,6 +42,7 @@ import {
   useRollbackApp,
   useSyncAppStatus,
 } from '@/hooks/useApps';
+import { useCreateStackTemplateFromApp } from '@/hooks/useStackTemplates';
 import { addonInstancesApi } from '@/lib/api/addons';
 import { AddComponentDrawer } from '@/components/apps/AddComponentDrawer';
 import {
@@ -49,6 +51,7 @@ import {
   type LinkedAddonGroup,
 } from '@/components/apps/AttachAddonDrawer';
 import { RemoveComponentDialog } from '@/components/apps/RemoveComponentDialog';
+import { SaveAsTemplateDialog } from '@/components/apps/SaveAsTemplateDialog';
 import { appLogsStreamUrl } from '@/lib/api/apps';
 import { ApiClientError } from '@/lib/api-client';
 import { useAuthStore } from '@/store/auth';
@@ -447,6 +450,7 @@ function AppDetailPageInner() {
   const removeComponent = useRemoveAppComponent(namespace, name, projectId);
   const attachAddon = useAttachAddon(namespace, name, projectId);
   const detachAddon = useDetachAddon(namespace, name, projectId);
+  const saveAsTemplate = useCreateStackTemplateFromApp();
 
   // Project-scoped addon instances — needed to resolve `export_ref.component`
   // back to an instance id so the detach button knows which DELETE to fire.
@@ -466,6 +470,7 @@ function AppDetailPageInner() {
   // Which component is the remove-confirm dialog asking about (null = closed).
   const [removeTarget, setRemoveTarget] = useState<AppReadComponent | null>(null);
   const [attachAddonOpen, setAttachAddonOpen] = useState(false);
+  const [saveAsTemplateOpen, setSaveAsTemplateOpen] = useState(false);
   // {addonInstanceId, displayName, envVarCount, workloadComponentName} the
   // detach-confirm dialog is asking about (null = closed). Keyed by instance
   // id rather than name so we know which DELETE to fire.
@@ -873,6 +878,15 @@ function AppDetailPageInner() {
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <Btn variant="default" size="sm" icon={RotateCw} onClick={() => void refreshViaPoll()} disabled={syncMutation.isPending}>Refresh</Btn>
+          <Btn
+            variant="default"
+            size="sm"
+            icon={Layers}
+            onClick={() => setSaveAsTemplateOpen(true)}
+            data-testid="header-save-as-template"
+          >
+            Save as template
+          </Btn>
           <Btn variant="primary" size="sm" icon={RefreshCw} onClick={handleRedeploy} disabled={redeploy.isPending}>{redeploy.isPending ? 'Redeploying…' : 'Redeploy'}</Btn>
           <Btn variant="danger" size="sm" icon={Trash2} onClick={() => setDeleteOpen(true)}>Delete</Btn>
         </div>
@@ -993,6 +1007,28 @@ function AppDetailPageInner() {
             title: 'Addon attached',
             description: `${vars.envMappings.length} env var${vars.envMappings.length === 1 ? '' : 's'} wired into this app.`,
           });
+        }}
+      />
+
+      <SaveAsTemplateDialog
+        open={saveAsTemplateOpen}
+        appName={app.name}
+        isPending={saveAsTemplate.isPending}
+        onClose={() => setSaveAsTemplateOpen(false)}
+        onSubmit={async (data) => {
+          const result = await saveAsTemplate.mutateAsync({
+            project_id: projectId,
+            namespace,
+            name,
+            data,
+          });
+          toast({
+            title: 'Template saved',
+            description: `${result.name} is in your /stacks gallery.`,
+          });
+          // Jump to the gallery so the user sees the new card. The mutation
+          // already invalidated ['stack-templates'], so the list will be fresh.
+          router.push('/stacks');
         }}
       />
 
