@@ -1430,7 +1430,16 @@ function DriftSurfaceCard({
 }) {
   const driftClass = sync.driftClass ?? 'recoverable';
   const blocked = driftClass === 'blocked_sync';
-  const details = Array.isArray(sync.driftDetails) ? sync.driftDetails : [];
+  const allDetails = Array.isArray(sync.driftDetails) ? sync.driftDetails : [];
+  // kn-kci: filter out ArgoCD-internal sync/health rows (Application kind,
+  // status.sync/status.health field paths). Those are the controller's own
+  // reconcile state, not user-meaningful resource diffs. Only show rows
+  // that map to k8s resources the user actually deployed (Deployments,
+  // Services, Ingresses, PVCs, ConfigMaps, …). If the filter eats every
+  // row, fall back to a 'Syncing with cluster…' message rather than
+  // implying there's nothing wrong.
+  const details = allDetails.filter((detail) => !isArgoCdInternalDriftDetail(detail));
+  const allFiltered = allDetails.length > 0 && details.length === 0;
 
   return (
     <Card flush data-testid="drift-surface" className="mb-4">
@@ -1471,7 +1480,15 @@ function DriftSurfaceCard({
         </p>
 
         <SectionLabel className="mb-0.5">What differs</SectionLabel>
-        {details.length === 0 ? (
+        {allFiltered ? (
+          <p
+            className="text-[11.5px] inline-flex items-center gap-1.5"
+            style={{ color: 'var(--text-3)' }}
+            data-testid="drift-internal-only"
+          >
+            <Loader2 className="h-3 w-3 animate-spin" /> Syncing with cluster…
+          </p>
+        ) : details.length === 0 ? (
           <p className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>
             Drift was reported, but no per-resource detail was attached yet.
           </p>
