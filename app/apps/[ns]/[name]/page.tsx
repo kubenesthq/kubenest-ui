@@ -1704,6 +1704,19 @@ function DeploymentsTab({
             {rows.map((row) => {
               const st = String(row.status).toLowerCase();
               const failed = st === 'failed';
+              // kn-m1i: rolling back while a deploy is still in flight is
+              // undefined behaviour — the operator would race itself between
+              // the in-progress reconcile and the rollback re-apply. Block
+              // the action at the source (button disabled + explanatory tooltip)
+              // rather than letting the user trigger it and then surfacing a
+              // backend error after the round-trip.
+              const rowActive = st === 'in_progress' || st === 'pending';
+              const rollbackDisabled = rollback.isPending || rowActive;
+              const rollbackTitle = rowActive
+                ? 'Cannot roll back while a deploy is in progress'
+                : row.prior_state
+                  ? 'Re-apply the spec captured by this deploy'
+                  : 'Roll the app back to this point (the operator re-applies the prior spec)';
               return (
                 <div key={row.id} className="flex items-start justify-between py-3 px-4 gap-4" style={{ borderTop: '1px solid var(--border)' }} data-testid="deploy-row">
                   <div className="flex items-start gap-2.5 min-w-0">
@@ -1723,10 +1736,12 @@ function DeploymentsTab({
                     <Btn
                       variant="default"
                       size="sm"
-                      disabled={rollback.isPending}
+                      disabled={rollbackDisabled}
                       onClick={() => setRollbackTarget(row)}
                       data-testid="deploy-rollback"
-                      title={row.prior_state ? 'Re-apply the spec captured by this deploy' : 'Roll the app back to this point (the operator re-applies the prior spec)'}
+                      data-row-active={rowActive ? 'true' : undefined}
+                      title={rollbackTitle}
+                      aria-disabled={rollbackDisabled || undefined}
                     >
                       Roll back to this
                     </Btn>
