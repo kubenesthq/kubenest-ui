@@ -208,7 +208,7 @@ function OverviewTab({ cluster }: { cluster: Cluster }) {
       </Card>
 
       <div className="col-span-2 space-y-4">
-        <InstallInstructions clusterId={cluster.id} />
+        {getConnectionStatus(cluster) !== 'connected' && <InstallInstructions clusterId={cluster.id} />}
         <Card><ClusterMetrics clusterId={cluster.id} /></Card>
       </div>
       <div className="space-y-4">
