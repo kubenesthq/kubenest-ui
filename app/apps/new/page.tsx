@@ -6,7 +6,6 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   ArrowLeft,
-  Check,
   ChevronDown,
   ChevronUp,
   Cog,
@@ -25,6 +24,7 @@ import { useCreateApp } from '@/hooks/useApps';
 import { Btn, Card, SectionLabel } from '@/components/shell/primitives';
 import { TInput, TSelect, FieldLabel } from '@/components/apps/form-controls';
 import { EnvVarRow } from '@/components/apps/EnvVarRow';
+import { useToast } from '@/components/ui/use-toast';
 import type {
   AddonDefinition,
   AddonType,
@@ -450,11 +450,11 @@ function NewAppPageInner() {
   const router = useRouter();
   const search = useSearchParams();
   const createApp = useCreateApp();
+  const { toast } = useToast();
 
   const [appName, setAppName] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState(search.get('project_id') ?? '');
   const [components, setComponents] = useState<ComponentEntry[]>([]);
-  const [deployed, setDeployed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAddonPicker, setShowAddonPicker] = useState(false);
 
@@ -571,29 +571,23 @@ function NewAppPageInner() {
     });
 
     try {
-      await createApp.mutateAsync({ name: appName, project_id: selectedProjectId, components: appComponents });
-      setDeployed(true);
-      setTimeout(() => router.push('/apps'), 1500);
+      // kn-s7q: take namespace + name from the API response (not the form
+      // buffer), to avoid drift from any server-side normalisation. Redirect
+      // immediately to the app detail page so the user lands on what they
+      // just created; the toast is the confirmation, not the splash.
+      const created = await createApp.mutateAsync({
+        name: appName,
+        project_id: selectedProjectId,
+        components: appComponents,
+      });
+      router.push(
+        `/apps/${encodeURIComponent(created.namespace)}/${encodeURIComponent(created.name)}?project_id=${encodeURIComponent(selectedProjectId)}`,
+      );
+      toast({ title: 'App created', description: created.name });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create app');
     }
   };
-
-  if (deployed) {
-    return (
-      <div className="px-6 py-8 max-w-[640px] mx-auto flex items-center justify-center min-h-[60vh]">
-        <div className="text-center space-y-3 anim-slide-up">
-          <div className="mx-auto w-14 h-14 rounded-full flex items-center justify-center" style={{ background: 'var(--ok-soft)' }}>
-            <Check className="h-7 w-7" style={{ color: 'var(--ok)' }} />
-          </div>
-          <h2 className="text-[20px] font-semibold" style={{ color: 'var(--text)' }}>App created</h2>
-          <p className="text-[13px]" style={{ color: 'var(--text-3)' }}>
-            <span className="font-mono" style={{ color: 'var(--text-2)' }}>{appName}</span> is deploying with {components.length} component{components.length !== 1 ? 's' : ''}.
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   const appNameError = appName.length > 0 && !k8sNameRegex.test(appName);
 
