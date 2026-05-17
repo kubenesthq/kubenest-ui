@@ -69,6 +69,7 @@ import type {
   AppComponent,
   DriftDetail,
   AppPhase,
+  AppRead,
   AppReadComponent,
   AppStatusResponse,
   DeploymentRecord,
@@ -152,6 +153,65 @@ function readReplicaCount(component: AppReadComponent): number | null {
   if (!spec || typeof spec !== 'object') return null;
   const replicas = (spec as Record<string, unknown>).replicas;
   return typeof replicas === 'number' ? replicas : null;
+}
+
+// kn-fd5 / kn-kci: ArgoCD-internal drift rows. The operator wraps every
+// kubenest app in an ArgoCD Application object; that Application's own
+// `status.sync` / `status.health` flip OutOfSync the instant the app is
+// created and stay there until ArgoCD finishes its first reconcile (~30-60s).
+// That signal isn't drift the user cares about — it's the controller's
+// internal reconcile state. We use this predicate twice:
+//   - kn-fd5: if every drift detail is internal AND the app is in the
+//     first 2-minute creation window, suppress the whole drift banner +
+//     pill and show a neutral 'Syncing…' indicator instead.
+//   - kn-kci: in DriftSurfaceCard, filter these rows out of WHAT DIFFERS
+//     so users only see user-meaningful resources (Deployments etc.).
+function isArgoCdInternalDriftDetail(detail: DriftDetail): boolean {
+  const resource = typeof detail.resource === 'string' ? detail.resource : '';
+  const field = typeof detail.field === 'string' ? detail.field : '';
+  // `Application/<name>` (case insensitive) — emitted by the operator when
+  // it surfaces an ArgoCD Application object's status. Backend may also
+  // emit the kind+group form `argoproj.io/Application` or include the group
+  // in a separate detail field — match both shapes leniently.
+  const isApplicationKind =
+    /^application\//i.test(resource)
+    || /\bargoproj\.io\b/i.test(resource)
+    || /(^|[/])argoproj\.io[/.]application/i.test(resource);
+  if (isApplicationKind) return true;
+  // Field path under `status.sync` / `status.health` is always ArgoCD's
+  // own reconcile state.
+  return /^status\.(sync|health)\b/i.test(field);
+}
+
+const INITIAL_SYNC_WINDOW_MS = 120_000;
+
+/**
+ * kn-fd5: suppress the drift banner during the initial ArgoCD reconcile
+ * window after app creation. Returns true ONLY when every condition holds:
+ *   - app.created_at is within the last 120 s,
+ *   - every drift detail is ArgoCD-internal (Application/status.sync/health),
+ *   - at least one component reports Running or Pending phase (i.e. nothing
+ *     has actively failed — Failed/Degraded means the drift is real).
+ */
+function isInitialSyncWindow(
+  app: AppRead | undefined,
+  sync: SyncDriftStatus | null,
+  statuses: Record<string, LiveComponentStatus>,
+  now: number,
+): boolean {
+  if (!app || !sync || !sync.driftDetected) return false;
+  if (sync.driftClass === 'blocked_sync') return false; // blocked drift is never just initial-sync noise
+  if (!app.created_at) return false;
+  const ageMs = now - new Date(app.created_at).getTime();
+  if (!(ageMs >= 0 && ageMs <= INITIAL_SYNC_WINDOW_MS)) return false;
+  const details = Array.isArray(sync.driftDetails) ? sync.driftDetails : [];
+  if (details.length === 0) return false;
+  if (!details.every(isArgoCdInternalDriftDetail)) return false;
+  const hasUsableComponent = app.components.some((component) => {
+    const phase = statuses[component.name]?.phase ?? app.phase;
+    return phase === 'Running' || phase === 'Pending' || phase === 'Deploying';
+  });
+  return hasUsableComponent;
 }
 
 function PhaseBadge({ phase, pulsing = false }: { phase: string; pulsing?: boolean }) {
@@ -810,6 +870,14 @@ function AppDetailPageInner() {
     return computeAggregatePhase(app.components, statusByName, app.phase);
   }, [app, staleStatuses, statusByName]);
 
+  // kn-fd5: hide the drift banner + pill during the initial ArgoCD reconcile
+  // window after app creation. `clock` ticks every 5 s so the suppression
+  // expires on its own without a manual refresh once the window is up.
+  const initialSyncSuppressed = useMemo(
+    () => isInitialSyncWindow(app, appSync, statusByName, clock),
+    [app, appSync, statusByName, clock],
+  );
+
   // kn-s3n: pause/resume header buttons appear based on the live replica
   // counts in workload_spec. Show Pause if any workload is running (>0);
   // show Resume if any workload is suspended (=0). Apps with no workload
@@ -1005,13 +1073,18 @@ function AppDetailPageInner() {
             <h1 className="text-[22px] font-semibold tracking-tight truncate" style={{ color: 'var(--text)' }}>{app.name}</h1>
             <PhaseBadge phase={aggregatePhase} pulsing={!staleStatuses && sse.connected} />
             {app.template_id ? <Pill tone="accent" size="sm">via template: {app.template_id}</Pill> : null}
-            {appSync?.driftDetected ? (
+            {appSync?.driftDetected && !initialSyncSuppressed ? (
               <Pill
                 tone={appSync.driftClass === 'blocked_sync' ? 'err' : 'warn'}
                 size="sm"
                 data-testid="app-drift-badge"
               >
                 drift {appSync.driftClass === 'blocked_sync' ? '(blocked)' : '(recoverable)'}
+              </Pill>
+            ) : null}
+            {initialSyncSuppressed ? (
+              <Pill tone="info" size="sm" data-testid="app-initial-sync-badge">
+                <Loader2 className="h-3 w-3 animate-spin" /> Syncing
               </Pill>
             ) : null}
           </div>
@@ -1084,7 +1157,7 @@ function AppDetailPageInner() {
         </div>
       </div>
 
-      {appSync?.driftDetected ? (
+      {appSync?.driftDetected && !initialSyncSuppressed ? (
         <DriftSurfaceCard
           sync={appSync}
           refreshing={syncMutation.isPending}
@@ -1093,6 +1166,18 @@ function AppDetailPageInner() {
           onRedeploy={handleRedeploy}
           onRollback={() => setTab('deploys')}
         />
+      ) : null}
+      {initialSyncSuppressed ? (
+        <Card flush data-testid="initial-sync-card" className="mb-4">
+          <div className="px-4 py-3 flex items-center gap-2 text-[12.5px]" style={{ color: 'var(--text-3)' }}>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: 'var(--info)' }} />
+            <span>
+              Initial sync in progress — ArgoCD is applying this app for the first time. The
+              transient OutOfSync status will clear once the first reconcile finishes
+              (typically 30–60 s).
+            </span>
+          </div>
+        </Card>
       ) : null}
 
       <TabBar tab={tab} setTab={setTab} />
