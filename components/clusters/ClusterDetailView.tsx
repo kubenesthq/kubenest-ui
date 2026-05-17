@@ -371,7 +371,9 @@ export function ClusterDetailView({ clusterId }: { clusterId: string }) {
 
       {tab === 'overview' && <OverviewTab cluster={cluster} />}
       {tab === 'projects' && <ProjectsTab cluster={cluster} />}
-      {tab === 'provisioning' && <ProvisioningJobsPanel clusterId={cluster.id} />}
+      {tab === 'provisioning' && (
+        <ProvisioningJobsPanel clusterId={cluster.id} connectionStatus={getConnectionStatus(cluster)} />
+      )}
       {tab === 'rbac' && (
         <StubCard
           title="Role-based access control"
