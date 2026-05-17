@@ -53,7 +53,7 @@ test.describe('monitoring', () => {
     await page.screenshot({ path: artifact('monitoring-cluster.png'), fullPage: true });
   });
 
-  test('app detail: the Monitoring tab + overview graphs hit the real metrics endpoint', async ({ page }) => {
+  test('app detail: the Monitoring tab hits the real metrics endpoint', async ({ page }) => {
     await page.goto('/apps');
     await page.waitForLoadState('domcontentloaded');
     const app = await firstApp(page);
@@ -63,8 +63,10 @@ test.describe('monitoring', () => {
     }
     await page.goto(`/apps/${encodeURIComponent(app.namespace)}/${encodeURIComponent(app.name)}?project_id=${app.projectId}`);
     await page.waitForLoadState('domcontentloaded');
-    // Overview tab shows a compact resource-graphs card.
-    await expect(page.getByText('Resource graphs')).toBeVisible({ timeout: 20_000 });
+    // kn-1ho: the Overview tab no longer carries a compact "Resource graphs"
+    // card — it always rendered "Metrics are temporarily unavailable" and was
+    // pure noise next to the dedicated Monitoring tab below.
+    await expect(page.getByText('Resource graphs')).toHaveCount(0);
     // Monitoring tab: full app + per-component series (or the labelled empty state).
     await page.getByRole('tab', { name: 'Monitoring' }).click();
     await expect(page.getByTestId('app-monitoring')).toBeVisible({ timeout: 10_000 });

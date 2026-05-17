@@ -1190,9 +1190,6 @@ function AppDetailPageInner() {
           live={!staleStatuses && sse.connected}
           deployRows={deploymentsPreview.data?.data ?? []}
           deployLoading={deploymentsPreview.isLoading}
-          namespace={namespace}
-          name={name}
-          projectId={projectId}
           onAddComponent={() => setAddComponentOpen(true)}
           onRemoveComponent={(c) => setRemoveTarget(c)}
           onAttachAddon={() => setAttachAddonOpen(true)}
@@ -1537,9 +1534,6 @@ function OverviewTab({
   live,
   deployRows,
   deployLoading,
-  namespace,
-  name,
-  projectId,
   onAddComponent,
   onRemoveComponent,
   onAttachAddon,
@@ -1553,9 +1547,9 @@ function OverviewTab({
   live: boolean;
   deployRows: DeploymentRecord[];
   deployLoading: boolean;
-  namespace: string;
-  name: string;
-  projectId: string;
+  // namespace/name/projectId removed with the kn-1ho Resource-graphs card —
+  // OverviewTab no longer needs the app identity to render. Reintroduce
+  // them when a real overview-scoped feature wants them (e.g. last-hour CPU).
   /** Opens the add-component drawer (kn-a4l). */
   onAddComponent: () => void;
   /** Opens the remove-component confirmation dialog for the given row (kn-fxe). */
@@ -1762,15 +1756,13 @@ function OverviewTab({
         </div>
       </Card>
 
-      <div className="md:col-span-2">
-        <Card>
-          <div className="flex items-center justify-between mb-2">
-            <SectionLabel>Resource graphs</SectionLabel>
-            <span className="text-[10.5px]" style={{ color: 'var(--text-3)' }}>last hour · full graphs on the Monitoring tab</span>
-          </div>
-          <AppMonitoring namespace={namespace} name={name} projectId={projectId} compact />
-        </Card>
-      </div>
+      {/*
+        kn-1ho: removed the Overview-tab "Resource graphs" card. The compact
+        sparkline rail always rendered "Metrics are temporarily unavailable"
+        in practice, and full graphs live on the dedicated Monitoring tab. If
+        a future bead wants a single-metric summary here (e.g. last-hour CPU),
+        file a scoped bead — don't restore the empty placeholder.
+      */}
     </div>
   );
 }
