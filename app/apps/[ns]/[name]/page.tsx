@@ -109,6 +109,14 @@ interface LiveComponentStatus {
 interface EnvRow {
   name: string;
   value: string;
+  /** kn-a8t: when true, the value lands in a k8s Secret rather than inline helm values. */
+  secret?: boolean;
+  /**
+   * kn-a8t: when set, this row was synthesised from a CR `valueFrom.exportRef`
+   * — addon-attached env vars are read-only here and surface only so they
+   * survive a round-trip through the PATCH. Edit them via Attach/Detach addon.
+   */
+  exportRef?: { component: string; exportKey: string };
 }
 
 interface EnvDraft {
@@ -188,6 +196,81 @@ function defaultEnvDraft(): EnvDraft {
     env: [{ name: '', value: '' }],
     dependsOn: [],
   };
+}
+
+/**
+ * kn-a8t: seed an editor draft from the LIVE component's workload_spec on
+ * the read-side `AppRead.components[]` rather than from a deployment-history
+ * snapshot. The CR shape uses camelCase (workloadSpec.image / port / env)
+ * with kubernetes-flavoured env entries (`{name, value}` or
+ * `{name, valueFrom: {secretKeyRef|exportRef}}`); we normalize that into
+ * the editor's EnvRow shape so previously-PATCHed env vars are visible.
+ */
+function seedDraftFromComponent(component: AppReadComponent): EnvDraft | null {
+  const workloadSpec = component.workload_spec;
+  if (!workloadSpec || typeof workloadSpec !== 'object') return null;
+  const spec = workloadSpec as Record<string, unknown>;
+  const seeded = defaultEnvDraft();
+
+  if (typeof spec.image === 'string') seeded.image = spec.image;
+  if (typeof spec.replicas === 'number') seeded.replicas = spec.replicas;
+  if (typeof spec.port === 'number') seeded.port = String(spec.port);
+
+  const ingress = spec.ingress as Record<string, unknown> | undefined;
+  if (ingress && typeof ingress === 'object') {
+    seeded.ingressEnabled = Boolean(ingress.enabled);
+    if (typeof ingress.host === 'string') seeded.ingressHost = ingress.host;
+    if (typeof ingress.path === 'string') seeded.ingressPath = ingress.path;
+  }
+
+  const env = spec.env;
+  if (Array.isArray(env)) {
+    const parsed: EnvRow[] = [];
+    for (const entry of env) {
+      if (!entry || typeof entry !== 'object') continue;
+      const e = entry as Record<string, unknown>;
+      const name = typeof e.name === 'string' ? e.name : null;
+      if (!name) continue;
+      // valueFrom.exportRef (addon-injected) — surface as a locked row.
+      const valueFrom = e.valueFrom as Record<string, unknown> | undefined;
+      const exportRef = valueFrom?.exportRef as Record<string, unknown> | undefined;
+      if (exportRef && typeof exportRef.component === 'string') {
+        const exportKey = typeof exportRef.key === 'string'
+          ? exportRef.key
+          : typeof exportRef.export_key === 'string' ? exportRef.export_key : null;
+        if (exportKey) {
+          parsed.push({ name, value: '', exportRef: { component: exportRef.component, exportKey } });
+          continue;
+        }
+      }
+      // valueFrom.secretKeyRef — surface as an empty editable row tagged secret.
+      const secretKeyRef = valueFrom?.secretKeyRef as Record<string, unknown> | undefined;
+      if (secretKeyRef && typeof secretKeyRef.name === 'string') {
+        parsed.push({ name, value: '', secret: true });
+        continue;
+      }
+      // Plain inline value (or `secret: true` from a prior PATCH).
+      parsed.push({
+        name,
+        value: typeof e.value === 'string' ? e.value : '',
+        secret: e.secret === true ? true : undefined,
+      });
+    }
+    if (parsed.length > 0) seeded.env = parsed;
+  }
+
+  const dependsOn = (component.workload_spec as Record<string, unknown>).dependsOn ?? (component.workload_spec as Record<string, unknown>).depends_on;
+  if (Array.isArray(dependsOn)) {
+    seeded.dependsOn = dependsOn.filter((d): d is string => typeof d === 'string');
+  }
+  if (spec.resources && typeof spec.resources === 'object') {
+    seeded.resourcesJson = JSON.stringify(spec.resources, null, 2);
+  }
+  if (spec.values && typeof spec.values === 'object') {
+    seeded.paramsJson = JSON.stringify(spec.values, null, 2);
+  }
+
+  return seeded;
 }
 
 function seedDraftFromHistory(componentName: string, rows: DeploymentRecord[]): EnvDraft {
@@ -691,7 +774,11 @@ function AppDetailPageInner() {
     }
   }, [appSync, patchConflict]);
 
-  // Seed each workload's env-var editing draft from its deployment history.
+  // kn-a8t: seed each workload's editing draft preferentially from the LIVE
+  // component spec on the AppRead response — so env vars added via a prior
+  // PATCH or via Attach addon show up. Fall back to deployment history only
+  // when the live spec is empty (older create flows didn't always populate
+  // workload_spec on the read side).
   useEffect(() => {
     const app = appQuery.data;
     if (!app) return;
@@ -702,7 +789,8 @@ function AppDetailPageInner() {
       for (const component of app.components) {
         if (!isWorkloadType(component.type)) continue;
         if (next[component.name]) continue;
-        next[component.name] = seedDraftFromHistory(component.name, rows);
+        const fromLive = seedDraftFromComponent(component);
+        next[component.name] = fromLive ?? seedDraftFromHistory(component.name, rows);
         changed = true;
       }
       return changed ? next : prev;
@@ -778,9 +866,27 @@ function AppDetailPageInner() {
         return;
       }
 
+      // kn-a8t: PATCH wants the snake_case TemplateComponent.EnvVar shape.
+      // Read-only export_ref rows (managed via Attach addon) must round-trip
+      // back so the backend doesn't drop them when it replaces the env array.
       const env = draft.env
-        .map((entry) => ({ name: entry.name.trim(), value: entry.value }))
-        .filter((entry) => entry.name.length > 0);
+        .map((entry) => {
+          const name = entry.name.trim();
+          if (!name) return null;
+          if (entry.exportRef) {
+            return {
+              name,
+              export_ref: {
+                component: entry.exportRef.component,
+                export_key: entry.exportRef.exportKey,
+              },
+            };
+          }
+          const base: Record<string, unknown> = { name, value: entry.value ?? '' };
+          if (entry.secret) base.secret = true;
+          return base;
+        })
+        .filter((entry): entry is Record<string, unknown> => entry !== null);
 
       const workloadSpec: Record<string, unknown> = { replicas: draft.replicas };
       if (draft.image.trim()) workloadSpec.image = draft.image.trim();
@@ -1046,6 +1152,12 @@ function AppDetailPageInner() {
           onRedeploy={handleRedeploy}
           refreshing={syncMutation.isPending}
           redeploying={redeploy.isPending}
+          components={app.components}
+          drafts={envDrafts}
+          onDraftChange={(componentName, nextDraft) => setEnvDrafts((prev) => ({ ...prev, [componentName]: nextDraft }))}
+          onSave={saveComponentPatch}
+          savingComponent={savingComponent}
+          patchPending={patchMutation.isPending}
         />
       )}
       {tab === 'monitoring' && <AppMonitoring namespace={namespace} name={name} projectId={projectId} />}
@@ -1827,7 +1939,9 @@ function EnvironmentPatchTab({
     <div className="space-y-4">
       <Card>
         <p className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>
-          Edit a component by name. Save sends <span className="font-mono">PATCH /apps</span> with the workload spec. Specs are seeded from deployment snapshots when one exists; otherwise fill the fields you need.
+          Environment variables and secrets for each component. Workload spec
+          (image, replicas, port, ingress, resources, params) lives under{' '}
+          <span className="font-medium" style={{ color: 'var(--text-2)' }}>Settings</span>.
         </p>
         {conflict ? (
           <div
@@ -1861,86 +1975,96 @@ function EnvironmentPatchTab({
       <ComponentPicker components={workloads} active={active} setActive={setPicked} testIdPrefix="env-component" />
 
       <Card flush>
-        <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+        <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
           <div className="text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>{active}</div>
+          <button type="button" onClick={addEnvRow} className="inline-flex items-center gap-1 text-[11.5px] hover:text-[var(--text)]" style={{ color: 'var(--text-3)' }} data-testid={`env-add-row-${active}`}>
+            <Plus className="h-3 w-3" /> Add env var
+          </button>
         </div>
-        <div className="p-4 space-y-4">
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="space-y-1 block">
-              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Image</span>
-              <TInput value={draft.image} onChange={(e) => updateDraft({ image: e.target.value })} placeholder="ghcr.io/org/app:tag" />
-            </label>
-            <label className="space-y-1 block">
-              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Replicas</span>
-              <TInput type="number" min={0} value={draft.replicas} onChange={(e) => { const n = Number(e.target.value); updateDraft({ replicas: Number.isNaN(n) ? 0 : Math.max(0, n) }); }} />
-            </label>
-            <label className="space-y-1 block">
-              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Port</span>
-              <TInput value={draft.port} onChange={(e) => updateDraft({ port: e.target.value })} placeholder="8080" />
-            </label>
-            <label className="space-y-1 block">
-              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Depends on (comma-separated)</span>
-              <TInput
-                value={draft.dependsOn.join(', ')}
-                onChange={(e) => updateDraft({ dependsOn: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
-                placeholder="postgres"
-              />
-            </label>
-          </div>
-
-          <div className="space-y-2 rounded-md p-3" style={{ border: '1px solid var(--border)' }}>
-            <label className="inline-flex items-center gap-2 text-[11.5px]" style={{ color: 'var(--text-2)' }}>
-              <input type="checkbox" checked={draft.ingressEnabled} onChange={(e) => updateDraft({ ingressEnabled: e.target.checked })} />
-              Enable ingress
-            </label>
-            {draft.ingressEnabled ? (
-              <div className="grid gap-3 md:grid-cols-2">
-                <label className="space-y-1 block">
-                  <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Ingress host</span>
-                  <TInput value={draft.ingressHost} onChange={(e) => updateDraft({ ingressHost: e.target.value })} placeholder="app.example.com" />
-                </label>
-                <label className="space-y-1 block">
-                  <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Ingress path</span>
-                  <TInput value={draft.ingressPath} onChange={(e) => updateDraft({ ingressPath: e.target.value })} placeholder="/" />
-                </label>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-[11.5px] font-medium" style={{ color: 'var(--text-2)' }}>Environment variables</p>
-              <button type="button" onClick={addEnvRow} className="inline-flex items-center gap-1 text-[11.5px] hover:text-[var(--text)]" style={{ color: 'var(--text-3)' }}>
-                <Plus className="h-3 w-3" /> Add row
-              </button>
-            </div>
+        <div className="p-4 space-y-3">
+          {draft.env.length === 0 ? (
+            <p className="text-[12px] italic" style={{ color: 'var(--text-4)' }}>
+              No environment variables yet. Add one above, or attach an addon from the overview tab to inject its exports.
+            </p>
+          ) : (
             <div className="space-y-2">
-              {draft.env.map((row, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <TInput value={row.name} onChange={(e) => updateEnvRow(index, { name: e.target.value })} placeholder="KEY" className="font-mono" />
-                  <TInput value={row.value} onChange={(e) => updateEnvRow(index, { value: e.target.value })} placeholder="value" className="font-mono" />
-                  <button type="button" onClick={() => removeEnvRow(index)} className="h-8 w-8 rounded-md flex items-center justify-center shrink-0 hover:text-[var(--err)]" style={{ color: 'var(--text-4)' }} aria-label="Remove env var">
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
+              {draft.env.map((row, index) => {
+                if (row.exportRef) {
+                  // Read-only chip — addon-injected env vars are managed via
+                  // the Attach addon drawer, not this editor.
+                  return (
+                    <div
+                      key={index}
+                      className="flex items-center gap-2 rounded-md px-2.5 h-8 text-[11.5px]"
+                      style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}
+                      data-testid={`env-row-export-${row.name}`}
+                    >
+                      <Link2 className="h-3 w-3 shrink-0" />
+                      <span className="font-mono font-medium">{row.name}</span>
+                      <span style={{ color: 'var(--text-3)' }}>
+                        ← {row.exportRef.exportKey} from {row.exportRef.component}
+                      </span>
+                      <span className="ml-auto text-[10.5px]" style={{ color: 'var(--text-4)' }}>
+                        managed via Attach addon
+                      </span>
+                    </div>
+                  );
+                }
+                return (
+                  <div key={index} className="flex items-center gap-2" data-testid={`env-row-${index}`}>
+                    <TInput
+                      value={row.name}
+                      onChange={(e) => updateEnvRow(index, { name: e.target.value })}
+                      placeholder="KEY"
+                      className="font-mono"
+                    />
+                    <TInput
+                      type={row.secret ? 'password' : 'text'}
+                      value={row.value}
+                      onChange={(e) => updateEnvRow(index, { value: e.target.value })}
+                      placeholder={row.secret ? '••••••' : 'value'}
+                      className="font-mono"
+                    />
+                    <label
+                      className="inline-flex items-center gap-1 text-[10.5px] shrink-0 select-none cursor-pointer"
+                      style={{ color: row.secret ? 'var(--accent)' : 'var(--text-4)' }}
+                      title={row.secret
+                        ? 'Mounted via k8s Secret (envFrom) — value is hidden in pod env'
+                        : 'Inline literal in helm values — toggle on to store as a k8s Secret instead'}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={Boolean(row.secret)}
+                        onChange={(e) => updateEnvRow(index, { secret: e.target.checked || undefined })}
+                        data-testid={`env-row-secret-${index}`}
+                      />
+                      Secret
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => removeEnvRow(index)}
+                      className="h-8 w-8 rounded-md flex items-center justify-center shrink-0 hover:text-[var(--err)]"
+                      style={{ color: 'var(--text-4)' }}
+                      aria-label="Remove env var"
+                      data-testid={`env-row-remove-${index}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
-          </div>
+          )}
 
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="space-y-1 block">
-              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Resources (JSON object)</span>
-              <TTextarea value={draft.resourcesJson} onChange={(e) => updateDraft({ resourcesJson: e.target.value })} className="min-h-28" />
-            </label>
-            <label className="space-y-1 block">
-              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Params / values (JSON object)</span>
-              <TTextarea value={draft.paramsJson} onChange={(e) => updateDraft({ paramsJson: e.target.value })} className="min-h-28" />
-            </label>
-          </div>
-
-          <div className="flex items-center justify-end">
-            <Btn variant="primary" size="sm" disabled={patchPending} onClick={() => onSave(active)} data-testid={`env-save-${active}`}>
-              {patchPending && savingComponent === active ? 'Saving…' : 'Save component patch'}
+          <div className="flex items-center justify-end pt-2" style={{ borderTop: '1px solid var(--border)' }}>
+            <Btn
+              variant="primary"
+              size="sm"
+              disabled={patchPending}
+              onClick={() => onSave(active)}
+              data-testid={`env-save-${active}`}
+            >
+              {patchPending && savingComponent === active ? 'Saving…' : 'Save env vars'}
             </Btn>
           </div>
         </div>
@@ -2137,6 +2261,12 @@ function SettingsTab({
   onRedeploy,
   refreshing,
   redeploying,
+  components,
+  drafts,
+  onDraftChange,
+  onSave,
+  savingComponent,
+  patchPending,
 }: {
   appName: string;
   namespace: string;
@@ -2146,25 +2276,162 @@ function SettingsTab({
   onRedeploy: () => void;
   refreshing: boolean;
   redeploying: boolean;
+  // kn-a8t: workload-config editor moved here from the Env tab.
+  components: AppReadComponent[];
+  drafts: Record<string, EnvDraft>;
+  onDraftChange: (componentName: string, draft: EnvDraft) => void;
+  onSave: (componentName: string) => void;
+  savingComponent: string | null;
+  patchPending: boolean;
 }) {
   return (
-    <Card>
-      <SectionLabel className="mb-2.5">App settings</SectionLabel>
-      <div className="grid gap-2 text-[12px] md:grid-cols-2">
-        {([
-          ['App', appName],
-          ['Namespace', namespace],
-          ['Project', projectId],
-          ['Template', templateId ?? 'inline app (no template)'],
-        ] as const).map(([k, v]) => (
-          <div key={k}><span style={{ color: 'var(--text-3)' }}>{k}: </span><span style={{ color: 'var(--text)' }}>{v}</span></div>
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-2 mt-4">
-        <Btn variant="default" size="sm" icon={RotateCw} onClick={onRefresh} disabled={refreshing}>Refresh status</Btn>
-        <Btn variant="primary" size="sm" icon={RefreshCw} onClick={onRedeploy} disabled={redeploying}>{redeploying ? 'Redeploying…' : 'Redeploy now'}</Btn>
-      </div>
-    </Card>
+    <div className="space-y-4">
+      <Card>
+        <SectionLabel className="mb-2.5">App settings</SectionLabel>
+        <div className="grid gap-2 text-[12px] md:grid-cols-2">
+          {([
+            ['App', appName],
+            ['Namespace', namespace],
+            ['Project', projectId],
+            ['Template', templateId ?? 'inline app (no template)'],
+          ] as const).map(([k, v]) => (
+            <div key={k}><span style={{ color: 'var(--text-3)' }}>{k}: </span><span style={{ color: 'var(--text)' }}>{v}</span></div>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2 mt-4">
+          <Btn variant="default" size="sm" icon={RotateCw} onClick={onRefresh} disabled={refreshing}>Refresh status</Btn>
+          <Btn variant="primary" size="sm" icon={RefreshCw} onClick={onRedeploy} disabled={redeploying}>{redeploying ? 'Redeploying…' : 'Redeploy now'}</Btn>
+        </div>
+      </Card>
+
+      <WorkloadConfigEditor
+        components={components}
+        drafts={drafts}
+        onDraftChange={onDraftChange}
+        onSave={onSave}
+        savingComponent={savingComponent}
+        patchPending={patchPending}
+      />
+    </div>
+  );
+}
+
+/**
+ * kn-a8t: per-workload spec editor (image / replicas / port / ingress /
+ * resources / params / depends_on) — relocated out of the Env tab so that
+ * tab can be narrowly about env vars + secrets. The save flow reuses the
+ * shared EnvDraft pipeline; this editor writes everything BUT `env`, which
+ * is owned by EnvironmentPatchTab. Both tabs save through the same
+ * `saveComponentPatch` so the PATCH body always carries the full draft.
+ */
+function WorkloadConfigEditor({
+  components,
+  drafts,
+  onDraftChange,
+  onSave,
+  savingComponent,
+  patchPending,
+}: {
+  components: AppReadComponent[];
+  drafts: Record<string, EnvDraft>;
+  onDraftChange: (componentName: string, draft: EnvDraft) => void;
+  onSave: (componentName: string) => void;
+  savingComponent: string | null;
+  patchPending: boolean;
+}) {
+  const workloads = useMemo(() => components.filter((c) => isWorkloadType(c.type)), [components]);
+  const [picked, setPicked] = useState<string | null>(null);
+  const active = picked && workloads.some((w) => w.name === picked) ? picked : (workloads[0]?.name ?? '');
+
+  if (workloads.length === 0) {
+    return (
+      <Card>
+        <div className="py-6 text-center text-[12.5px]" style={{ color: 'var(--text-3)' }}>
+          No workload components — nothing to configure.
+        </div>
+      </Card>
+    );
+  }
+
+  const draft = active ? drafts[active] ?? defaultEnvDraft() : defaultEnvDraft();
+  const updateDraft = (patch: Partial<EnvDraft>) => {
+    if (!active) return;
+    onDraftChange(active, { ...draft, ...patch });
+  };
+
+  return (
+    <div className="space-y-3">
+      <ComponentPicker components={workloads} active={active} setActive={setPicked} testIdPrefix="settings-component" />
+      <Card flush>
+        <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>{active}</div>
+          <p className="text-[11.5px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+            Edit the workload spec. Env vars + secrets are on the Env tab.
+          </p>
+        </div>
+        <div className="p-4 space-y-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="space-y-1 block">
+              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Image</span>
+              <TInput value={draft.image} onChange={(e) => updateDraft({ image: e.target.value })} placeholder="ghcr.io/org/app:tag" data-testid="settings-image" />
+            </label>
+            <label className="space-y-1 block">
+              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Replicas</span>
+              <TInput type="number" min={0} value={draft.replicas} onChange={(e) => { const n = Number(e.target.value); updateDraft({ replicas: Number.isNaN(n) ? 0 : Math.max(0, n) }); }} data-testid="settings-replicas" />
+            </label>
+            <label className="space-y-1 block">
+              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Port</span>
+              <TInput value={draft.port} onChange={(e) => updateDraft({ port: e.target.value })} placeholder="8080" data-testid="settings-port" />
+            </label>
+            <label className="space-y-1 block">
+              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Depends on (comma-separated)</span>
+              <TInput
+                value={draft.dependsOn.join(', ')}
+                onChange={(e) => updateDraft({ dependsOn: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
+                placeholder="postgres"
+                data-testid="settings-depends-on"
+              />
+            </label>
+          </div>
+
+          <div className="space-y-2 rounded-md p-3" style={{ border: '1px solid var(--border)' }}>
+            <label className="inline-flex items-center gap-2 text-[11.5px]" style={{ color: 'var(--text-2)' }}>
+              <input type="checkbox" checked={draft.ingressEnabled} onChange={(e) => updateDraft({ ingressEnabled: e.target.checked })} data-testid="settings-ingress-toggle" />
+              Enable ingress
+            </label>
+            {draft.ingressEnabled ? (
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="space-y-1 block">
+                  <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Ingress host</span>
+                  <TInput value={draft.ingressHost} onChange={(e) => updateDraft({ ingressHost: e.target.value })} placeholder="app.example.com" data-testid="settings-ingress-host" />
+                </label>
+                <label className="space-y-1 block">
+                  <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Ingress path</span>
+                  <TInput value={draft.ingressPath} onChange={(e) => updateDraft({ ingressPath: e.target.value })} placeholder="/" data-testid="settings-ingress-path" />
+                </label>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="space-y-1 block">
+              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Resources (JSON object)</span>
+              <TTextarea value={draft.resourcesJson} onChange={(e) => updateDraft({ resourcesJson: e.target.value })} className="min-h-28" data-testid="settings-resources" />
+            </label>
+            <label className="space-y-1 block">
+              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Params / values (JSON object)</span>
+              <TTextarea value={draft.paramsJson} onChange={(e) => updateDraft({ paramsJson: e.target.value })} className="min-h-28" data-testid="settings-params" />
+            </label>
+          </div>
+
+          <div className="flex items-center justify-end">
+            <Btn variant="primary" size="sm" disabled={patchPending} onClick={() => onSave(active)} data-testid={`settings-save-${active}`}>
+              {patchPending && savingComponent === active ? 'Saving…' : 'Save workload spec'}
+            </Btn>
+          </div>
+        </div>
+      </Card>
+    </div>
   );
 }
 
