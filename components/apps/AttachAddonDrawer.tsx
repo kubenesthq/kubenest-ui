@@ -50,6 +50,19 @@ interface MappingDraft {
   enabled: boolean;
 }
 
+/**
+ * Chart-mode workloads render via an external Helm chart that does not honor
+ * `workloadSpec.env` — attaching an addon to one would silently drop the
+ * injected env vars at apply time. The backend rejects this with 422 (kn-fzw)
+ * so we mirror the same rule in the UI and never offer chart-mode workloads
+ * as attach targets. Same shape check the app page's `isChartMode` uses.
+ */
+function isChartModeComponent(component: AppReadComponent): boolean {
+  const spec = component.workload_spec;
+  if (!spec || typeof spec !== 'object') return false;
+  return (spec as Record<string, unknown>).chart != null;
+}
+
 function attachErrorMessage(error: unknown): string {
   if (error instanceof ApiClientError) {
     const detail = error.detail as Record<string, unknown> | null;
@@ -87,6 +100,16 @@ export function AttachAddonDrawer({
   const [selectedInstanceId, setSelectedInstanceId] = useState<string>('');
   const [mappings, setMappings] = useState<MappingDraft[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  // Chart-mode workloads are silently env-var-blind (see isChartModeComponent
+  // above + backend kn-fzw guard). Split the props list so the picker only
+  // offers image-mode targets; keep the chart-mode count around so we can
+  // explain the omission in the empty-state banner.
+  const attachableWorkloadComponents = useMemo(
+    () => workloadComponents.filter((c) => !isChartModeComponent(c)),
+    [workloadComponents],
+  );
+  const chartModeWorkloadCount = workloadComponents.length - attachableWorkloadComponents.length;
 
   const { data: instancesData, isLoading: instancesLoading } = useQuery({
     queryKey: ['addon-instances', projectId],
@@ -137,7 +160,7 @@ export function AttachAddonDrawer({
       setMappings([]);
       return;
     }
-    const defaultComponent = workloadComponents[0]?.name ?? '';
+    const defaultComponent = attachableWorkloadComponents[0]?.name ?? '';
     // eslint-disable-next-line react-hooks/set-state-in-effect -- seeding local mapping drafts from a freshly picked addon instance
     setMappings(
       exportEntries.map((entry) => ({
@@ -148,7 +171,7 @@ export function AttachAddonDrawer({
         enabled: true,
       })),
     );
-  }, [selectedInstance, exportEntries, workloadComponents]);
+  }, [selectedInstance, exportEntries, attachableWorkloadComponents]);
 
   if (!open) return null;
 
@@ -189,7 +212,7 @@ export function AttachAddonDrawer({
     }
   };
 
-  const noWorkloads = workloadComponents.length === 0;
+  const noWorkloads = attachableWorkloadComponents.length === 0;
 
   return (
     <div
@@ -273,11 +296,23 @@ export function AttachAddonDrawer({
             <div
               className="rounded-md px-3 py-2 text-[12px] flex items-start gap-2"
               style={{ background: 'var(--warn-soft)', color: 'var(--warn)' }}
+              data-testid="attach-addon-no-targets"
             >
               <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
               <span>
-                This app has no workload components — there&apos;s nothing for an addon to inject env vars into.
-                Add a workload first.
+                {chartModeWorkloadCount > 0 ? (
+                  <>
+                    All workload components on this app render via a custom Helm chart, which
+                    doesn&apos;t honor injected env vars. Pass values through{' '}
+                    <span className="font-mono">chart_values</span> on the component instead,
+                    or add an image-mode workload to receive the addon&apos;s exports.
+                  </>
+                ) : (
+                  <>
+                    This app has no workload components — there&apos;s nothing for an addon to inject env vars into.
+                    Add a workload first.
+                  </>
+                )}
               </span>
             </div>
           )}
@@ -326,7 +361,7 @@ export function AttachAddonDrawer({
                           className="!w-40"
                           data-testid={`attach-addon-component-${mapping.exportKey}`}
                         >
-                          {workloadComponents.map((c) => (
+                          {attachableWorkloadComponents.map((c) => (
                             <option key={c.name} value={c.name}>{c.name}</option>
                           ))}
                         </TSelect>
@@ -351,6 +386,18 @@ export function AttachAddonDrawer({
                   <CheckCircle2 className="h-3 w-3" style={{ color: 'var(--ok)' }} />
                   Ready to attach {mappings.filter((m) => m.enabled).length} env var
                   {mappings.filter((m) => m.enabled).length === 1 ? '' : 's'}.
+                </p>
+              )}
+              {chartModeWorkloadCount > 0 && (
+                <p
+                  className="text-[10.5px] mt-2"
+                  style={{ color: 'var(--text-3)' }}
+                  data-testid="attach-addon-chart-mode-note"
+                >
+                  {chartModeWorkloadCount} chart-mode workload
+                  {chartModeWorkloadCount === 1 ? ' is' : 's are'} hidden — custom Helm
+                  charts ignore injected env vars. Use{' '}
+                  <span className="font-mono">chart_values</span> on that component instead.
                 </p>
               )}
             </div>
