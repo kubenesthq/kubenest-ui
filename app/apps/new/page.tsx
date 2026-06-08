@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useState, useCallback, useMemo } from 'react';
+import { load as yamlLoad, YAMLException } from 'js-yaml';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -49,6 +50,7 @@ interface WorkloadFormData {
   deployMode: DeployMode;
   image: string;
   chart: ChartSpec;
+  valuesYaml: string;
   replicas: number;
   port: number | null;
   ingressEnabled: boolean;
@@ -171,6 +173,8 @@ function WorkloadCard({
 
   const isChart = w.deployMode === 'chart';
   const updateChart = (patch: Partial<ChartSpec>) => updateWorkload({ chart: { ...w.chart, ...patch } });
+  const [valuesOpen, setValuesOpen] = useState(false);
+  const [yamlError, setYamlError] = useState<string | null>(null);
 
   const cardIcon = isChart
     ? <Package className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
@@ -234,6 +238,43 @@ function WorkloadCard({
           </div>
           <div className="rounded-md px-3 py-2 text-[11.5px]" style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>
             Scaling and pause/resume are managed via chart values.
+          </div>
+
+          <div>
+            <button
+              type="button"
+              onClick={() => setValuesOpen((v) => !v)}
+              className="text-[12px] flex items-center gap-1 hover:text-[var(--text)]"
+              style={{ color: 'var(--text-3)' }}
+            >
+              {valuesOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+              Values (optional)
+            </button>
+            {valuesOpen && (
+              <div className="mt-2">
+                <textarea
+                  rows={10}
+                  placeholder={`# Override chart default values\n# Example (Bitnami postgresql):\n# auth:\n#   postgresPassword: mypassword\n# primary:\n#   persistence:\n#     size: 8Gi`}
+                  value={w.valuesYaml}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    updateWorkload({ valuesYaml: raw });
+                    if (!raw.trim()) { setYamlError(null); return; }
+                    try { yamlLoad(raw); setYamlError(null); }
+                    catch { setYamlError('Invalid YAML'); }
+                  }}
+                  className="w-full rounded-md px-3 py-2 text-[12px] resize-y"
+                  style={{
+                    fontFamily: 'monospace',
+                    background: 'var(--surface-2)',
+                    color: 'var(--text)',
+                    border: `1px solid ${yamlError ? 'var(--err)' : 'var(--border)'}`,
+                    outline: 'none',
+                  }}
+                />
+                {yamlError && <p className="text-[11px] mt-1" style={{ color: 'var(--err)' }}>{yamlError}</p>}
+              </div>
+            )}
           </div>
         </>
       ) : (
@@ -550,7 +591,7 @@ function NewAppPageInner() {
         id: genId(),
         name: '',
         type: 'workload',
-        workload: { deployMode: 'image', image: '', chart: { repo: '', name: '', version: '' }, replicas: 1, port: 8080, ingressEnabled: false, ingressHost: '', env: [], kind: 'web-service' },
+        workload: { deployMode: 'image', image: '', chart: { repo: '', name: '', version: '' }, valuesYaml: '', replicas: 1, port: 8080, ingressEnabled: false, ingressHost: '', env: [], kind: 'web-service' },
         collapsed: false,
       },
     ]);
@@ -620,15 +661,28 @@ function NewAppPageInner() {
     });
     if (badChart) return setError(`Workload "${badChart.name}" needs chart repository, name, and version`);
 
+    const badYaml = components.find((c) => {
+      if (c.type !== 'workload' || c.workload?.deployMode !== 'chart') return false;
+      const raw = c.workload.valuesYaml.trim();
+      if (!raw) return false;
+      try { yamlLoad(raw); return false; } catch { return true; }
+    });
+    if (badYaml) return setError(`Workload "${badYaml.name}" has invalid YAML values`);
+
     const appComponents: AppComponent[] = components.map((c) => {
       if (c.type === 'workload') {
         const w = c.workload!;
         if (w.deployMode === 'chart') {
+          let parsedValues: Record<string, unknown> | undefined;
+          if (w.valuesYaml.trim()) {
+            const loaded = yamlLoad(w.valuesYaml) as Record<string, unknown>;
+            if (loaded && typeof loaded === 'object') parsedValues = loaded;
+          }
           return {
             name: c.name,
             type: 'workload' as const,
             depends_on: buildDependsOn(c),
-            workload_spec: { chart: w.chart },
+            workload_spec: { chart: w.chart, ...(parsedValues ? { values: parsedValues } : {}) },
           };
         }
         const envVars: AppEnvVar[] = w.env
