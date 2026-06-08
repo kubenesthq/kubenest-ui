@@ -12,9 +12,11 @@ import {
   Database,
   Download,
   History,
+  Info,
   Layers,
   Link2,
   Loader2,
+  Package,
   Pause,
   PauseCircle,
   Play,
@@ -27,6 +29,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
+import { load as yamlLoad, dump as yamlDump } from 'js-yaml';
 import { useQuery } from '@tanstack/react-query';
 import { getProject } from '@/api/projects';
 import { getCluster } from '@/api/clusters';
@@ -131,6 +134,8 @@ interface EnvDraft {
   paramsJson: string;
   env: EnvRow[];
   dependsOn: string[];
+  chartVersionEdit: string;
+  chartValuesYaml: string;
 }
 
 interface PatchConflictState {
@@ -140,6 +145,38 @@ interface PatchConflictState {
 
 function isWorkloadType(type: unknown): boolean {
   return typeof type === 'string' && type.toLowerCase() === 'workload';
+}
+
+function isChartMode(component: AppReadComponent): boolean {
+  const spec = component.workload_spec;
+  if (!spec || typeof spec !== 'object') return false;
+  return (spec as Record<string, unknown>).chart != null;
+}
+
+function getChartSpec(component: AppReadComponent): { repo: string; name: string; version: string } | null {
+  const spec = component.workload_spec as Record<string, unknown> | null;
+  if (!spec) return null;
+  const chart = spec.chart as Record<string, unknown> | null;
+  if (!chart) return null;
+  return {
+    repo: typeof chart.repo === 'string' ? chart.repo : '',
+    name: typeof chart.name === 'string' ? chart.name : '',
+    version: typeof chart.version === 'string' ? chart.version : '',
+  };
+}
+
+function formatChartBadge(chart: { repo: string; name: string; version: string }): string {
+  let prefix = '';
+  try {
+    const url = new URL(chart.repo);
+    const parts = url.pathname.replace(/^\//, '').split('/').filter(Boolean);
+    prefix = parts.length > 0 ? parts[parts.length - 1] + '/' : '';
+  } catch {
+    // not a URL — use repo as-is, truncated
+    const repoShort = chart.repo.replace(/^oci:\/\//, '').split('/').pop() ?? '';
+    prefix = repoShort ? repoShort + '/' : '';
+  }
+  return `${prefix}${chart.name} @ ${chart.version}`;
 }
 
 /**
@@ -255,6 +292,8 @@ function defaultEnvDraft(): EnvDraft {
     paramsJson: '{}',
     env: [{ name: '', value: '' }],
     dependsOn: [],
+    chartVersionEdit: '',
+    chartValuesYaml: '',
   };
 }
 
@@ -328,6 +367,18 @@ function seedDraftFromComponent(component: AppReadComponent): EnvDraft | null {
   }
   if (spec.values && typeof spec.values === 'object') {
     seeded.paramsJson = JSON.stringify(spec.values, null, 2);
+  }
+
+  const chart = spec.chart as Record<string, unknown> | undefined;
+  if (chart && typeof chart.version === 'string') {
+    seeded.chartVersionEdit = chart.version;
+  }
+  if (spec.values && typeof spec.values === 'object') {
+    try {
+      seeded.chartValuesYaml = yamlDump(spec.values, { indent: 2 });
+    } catch {
+      seeded.chartValuesYaml = '';
+    }
   }
 
   return seeded;
@@ -896,10 +947,55 @@ function AppDetailPageInner() {
     return { running, paused };
   }, [app]);
 
+  const hasChartModeComponent = useMemo(
+    () => app?.components.some((c) => isWorkloadType(c.type) && isChartMode(c)) ?? false,
+    [app],
+  );
+
   const saveComponentPatch = useCallback(
     (componentName: string) => {
       const draft = envDrafts[componentName];
       if (!draft) return;
+
+      // Chart-mode save: update chart version and/or values YAML.
+      const component = app?.components.find((c) => c.name === componentName);
+      const chartSpec = component ? getChartSpec(component) : null;
+      if (chartSpec) {
+        const newVersion = draft.chartVersionEdit.trim() || chartSpec.version;
+        let chartValues: Record<string, unknown> | undefined;
+        if (draft.chartValuesYaml.trim()) {
+          try {
+            const parsed = yamlLoad(draft.chartValuesYaml);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              chartValues = parsed as Record<string, unknown>;
+            }
+          } catch {
+            toast({ title: 'Invalid YAML', description: 'Check the chart values YAML syntax.', variant: 'error' });
+            return;
+          }
+        }
+        const workloadSpec: Record<string, unknown> = {
+          chart: { repo: chartSpec.repo, name: chartSpec.name, version: newVersion },
+        };
+        if (chartValues) workloadSpec.values = chartValues;
+        const payload: AppComponent = { name: componentName, type: 'workload', workload_spec: workloadSpec };
+        setSavingComponent(componentName);
+        setPatchConflict(null);
+        patchMutation.mutate(
+          { components: [payload] },
+          {
+            onSuccess: () => {
+              setSavingComponent(null);
+              toast({ title: 'Chart updated', description: `Patched ${componentName}.` });
+            },
+            onError: (error: unknown) => {
+              setSavingComponent(null);
+              toast({ title: 'Update failed', description: errorMessage(error), variant: 'error' });
+            },
+          },
+        );
+        return;
+      }
 
       let resources: Record<string, unknown> | undefined;
       let values: Record<string, unknown> | undefined;
@@ -1119,7 +1215,7 @@ function AppDetailPageInner() {
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <Btn variant="default" size="sm" icon={RotateCw} onClick={() => void refreshViaPoll()} disabled={syncMutation.isPending}>Refresh</Btn>
-          {workloadReplicaSummary.running > 0 && (
+          {!hasChartModeComponent && workloadReplicaSummary.running > 0 && (
             <Btn
               variant="default"
               size="sm"
@@ -1131,7 +1227,7 @@ function AppDetailPageInner() {
               {pauseApp.isPending ? 'Pausing…' : 'Pause'}
             </Btn>
           )}
-          {workloadReplicaSummary.paused > 0 && (
+          {!hasChartModeComponent && workloadReplicaSummary.paused > 0 && (
             <Btn
               variant="default"
               size="sm"
@@ -1175,6 +1271,18 @@ function AppDetailPageInner() {
               Initial sync in progress — ArgoCD is applying this app for the first time. The
               transient OutOfSync status will clear once the first reconcile finishes
               (typically 30–60 s).
+            </span>
+          </div>
+        </Card>
+      ) : null}
+
+      {hasChartModeComponent ? (
+        <Card flush data-testid="chart-mode-banner" className="mb-4">
+          <div className="px-4 py-3 flex items-center gap-2 text-[12.5px]" style={{ color: 'var(--text-3)' }}>
+            <Info className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--info)' }} />
+            <span>
+              This app uses a custom Helm chart. Pause and resume are not available — manage
+              replicas via chart values in the <strong style={{ color: 'var(--text-2)' }}>Settings</strong> tab.
             </span>
           </div>
         </Card>
@@ -1592,6 +1700,8 @@ function OverviewTab({
               const isWorkload = isWorkloadType(component.type);
               const componentReplicas = isWorkload ? readReplicaCount(component) : null;
               const isPaused = isWorkload && componentReplicas === 0;
+              const componentIsChart = isWorkload && isChartMode(component);
+              const componentChartSpec = componentIsChart ? getChartSpec(component) : null;
               // kn-gfa: linked-addon chips render under workload rows when an
               // env var imports via export_ref. Groups are by referenced
               // component name so the detach button can target an addon
@@ -1611,7 +1721,14 @@ function OverviewTab({
                       <ComponentIcon type={component.type} />
                       <div className="min-w-0">
                         <p className="text-[12.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{component.name}</p>
-                        <p className="text-[10.5px] capitalize" style={{ color: 'var(--text-3)' }}>{component.type}</p>
+                        {componentIsChart && componentChartSpec ? (
+                          <span className="inline-flex items-center gap-1 text-[10.5px]" style={{ color: 'var(--accent)' }}>
+                            <Package className="h-3 w-3" />
+                            {formatChartBadge(componentChartSpec)}
+                          </span>
+                        ) : (
+                          <p className="text-[10.5px] capitalize" style={{ color: 'var(--text-3)' }}>{component.type}</p>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -1621,7 +1738,9 @@ function OverviewTab({
                             {liveStatus?.health ?? '—'}{liveStatus?.sync ? ` · ${liveStatus.sync}` : ''}
                           </p>
                         ) : null}
-                        {isPaused ? (
+                        {componentIsChart ? (
+                          <span className="text-[10.5px]" style={{ color: 'var(--text-4)' }}>Managed by chart</span>
+                        ) : isPaused ? (
                           <Pill tone="warn" size="sm" data-testid={`component-paused-badge-${component.name}`}>
                             Paused
                           </Pill>
@@ -1630,17 +1749,31 @@ function OverviewTab({
                         )}
                       </div>
                       {isWorkload && (
-                        <button
-                          type="button"
-                          onClick={() => onScaleComponent({ name: component.name, currentReplicas: componentReplicas })}
-                          data-testid={`component-scale-${component.name}`}
-                          title={`Scale ${component.name}${componentReplicas !== null ? ` (currently ${componentReplicas})` : ''}`}
-                          aria-label={`Scale ${component.name}`}
-                          className="h-7 w-7 rounded-md flex items-center justify-center hover:text-[var(--accent)] transition-colors"
-                          style={{ color: 'var(--text-4)' }}
-                        >
-                          <Sliders className="h-3.5 w-3.5" />
-                        </button>
+                        componentIsChart ? (
+                          <button
+                            type="button"
+                            disabled
+                            title="Update replicas via chart values in Settings"
+                            aria-label="Scaling not available for chart-mode components"
+                            data-testid={`component-scale-${component.name}`}
+                            className="h-7 w-7 rounded-md flex items-center justify-center cursor-not-allowed opacity-30"
+                            style={{ color: 'var(--text-4)' }}
+                          >
+                            <Sliders className="h-3.5 w-3.5" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => onScaleComponent({ name: component.name, currentReplicas: componentReplicas })}
+                            data-testid={`component-scale-${component.name}`}
+                            title={`Scale ${component.name}${componentReplicas !== null ? ` (currently ${componentReplicas})` : ''}`}
+                            aria-label={`Scale ${component.name}`}
+                            className="h-7 w-7 rounded-md flex items-center justify-center hover:text-[var(--accent)] transition-colors"
+                            style={{ color: 'var(--text-4)' }}
+                          >
+                            <Sliders className="h-3.5 w-3.5" />
+                          </button>
+                        )
                       )}
                       {canRemove && (
                         <button
@@ -2453,77 +2586,125 @@ function WorkloadConfigEditor({
     onDraftChange(active, { ...draft, ...patch });
   };
 
+  const activeComponent = workloads.find((w) => w.name === active);
+  const activeIsChart = activeComponent ? isChartMode(activeComponent) : false;
+  const activeChartSpec = activeComponent ? getChartSpec(activeComponent) : null;
+
   return (
     <div className="space-y-3">
       <ComponentPicker components={workloads} active={active} setActive={setPicked} testIdPrefix="settings-component" />
       <Card flush>
         <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
-          <div className="text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>{active}</div>
+          <div className="text-[13.5px] font-semibold flex items-center gap-2" style={{ color: 'var(--text)' }}>
+            {active}
+            {activeIsChart && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-normal px-1.5 py-0.5 rounded" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
+                <Package className="h-3 w-3" /> Helm chart
+              </span>
+            )}
+          </div>
           <p className="text-[11.5px] mt-0.5" style={{ color: 'var(--text-3)' }}>
-            Edit the workload spec. Env vars + secrets are on the Env tab.
+            {activeIsChart ? 'Edit chart version and override values.' : 'Edit the workload spec. Env vars + secrets are on the Env tab.'}
           </p>
         </div>
-        <div className="p-4 space-y-4">
-          <div className="grid gap-3 md:grid-cols-2">
+        {activeIsChart && activeChartSpec ? (
+          <div className="p-4 space-y-4">
+            <div className="rounded-md px-3 py-2 text-[11.5px]" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-3)' }}>
+              <span style={{ color: 'var(--text-4)' }}>Repo:</span>{' '}
+              <span className="font-mono" style={{ color: 'var(--text-2)' }}>{activeChartSpec.repo}</span>
+              {' · '}
+              <span style={{ color: 'var(--text-4)' }}>Chart:</span>{' '}
+              <span className="font-mono" style={{ color: 'var(--text-2)' }}>{activeChartSpec.name}</span>
+            </div>
             <label className="space-y-1 block">
-              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Image</span>
-              <TInput value={draft.image} onChange={(e) => updateDraft({ image: e.target.value })} placeholder="ghcr.io/org/app:tag" data-testid="settings-image" />
-            </label>
-            <label className="space-y-1 block">
-              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Replicas</span>
-              <TInput type="number" min={0} value={draft.replicas} onChange={(e) => { const n = Number(e.target.value); updateDraft({ replicas: Number.isNaN(n) ? 0 : Math.max(0, n) }); }} data-testid="settings-replicas" />
-            </label>
-            <label className="space-y-1 block">
-              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Port</span>
-              <TInput value={draft.port} onChange={(e) => updateDraft({ port: e.target.value })} placeholder="8080" data-testid="settings-port" />
-            </label>
-            <label className="space-y-1 block">
-              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Depends on (comma-separated)</span>
+              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Chart version</span>
               <TInput
-                value={draft.dependsOn.join(', ')}
-                onChange={(e) => updateDraft({ dependsOn: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
-                placeholder="postgres"
-                data-testid="settings-depends-on"
+                value={draft.chartVersionEdit}
+                onChange={(e) => updateDraft({ chartVersionEdit: e.target.value })}
+                placeholder={activeChartSpec.version}
+                data-testid="settings-chart-version"
               />
             </label>
-          </div>
-
-          <div className="space-y-2 rounded-md p-3" style={{ border: '1px solid var(--border)' }}>
-            <label className="inline-flex items-center gap-2 text-[11.5px]" style={{ color: 'var(--text-2)' }}>
-              <input type="checkbox" checked={draft.ingressEnabled} onChange={(e) => updateDraft({ ingressEnabled: e.target.checked })} data-testid="settings-ingress-toggle" />
-              Enable ingress
-            </label>
-            {draft.ingressEnabled ? (
-              <div className="grid gap-3 md:grid-cols-2">
-                <label className="space-y-1 block">
-                  <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Ingress host</span>
-                  <TInput value={draft.ingressHost} onChange={(e) => updateDraft({ ingressHost: e.target.value })} placeholder="app.example.com" data-testid="settings-ingress-host" />
-                </label>
-                <label className="space-y-1 block">
-                  <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Ingress path</span>
-                  <TInput value={draft.ingressPath} onChange={(e) => updateDraft({ ingressPath: e.target.value })} placeholder="/" data-testid="settings-ingress-path" />
-                </label>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2">
             <label className="space-y-1 block">
-              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Resources (JSON object)</span>
-              <TTextarea value={draft.resourcesJson} onChange={(e) => updateDraft({ resourcesJson: e.target.value })} className="min-h-28" data-testid="settings-resources" />
+              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Values (YAML)</span>
+              <TTextarea
+                value={draft.chartValuesYaml}
+                onChange={(e) => updateDraft({ chartValuesYaml: e.target.value })}
+                rows={12}
+                className="font-mono text-[11px]"
+                placeholder={'# Override chart values\nreplicaCount: 1\nservice:\n  type: ClusterIP\n'}
+                data-testid="settings-chart-values"
+              />
             </label>
-            <label className="space-y-1 block">
-              <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Params / values (JSON object)</span>
-              <TTextarea value={draft.paramsJson} onChange={(e) => updateDraft({ paramsJson: e.target.value })} className="min-h-28" data-testid="settings-params" />
-            </label>
+            <div className="flex items-center justify-end">
+              <Btn variant="primary" size="sm" disabled={patchPending} onClick={() => onSave(active)} data-testid={`settings-save-${active}`}>
+                {patchPending && savingComponent === active ? 'Saving…' : 'Save chart settings'}
+              </Btn>
+            </div>
           </div>
+        ) : (
+          <div className="p-4 space-y-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="space-y-1 block">
+                <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Image</span>
+                <TInput value={draft.image} onChange={(e) => updateDraft({ image: e.target.value })} placeholder="ghcr.io/org/app:tag" data-testid="settings-image" />
+              </label>
+              <label className="space-y-1 block">
+                <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Replicas</span>
+                <TInput type="number" min={0} value={draft.replicas} onChange={(e) => { const n = Number(e.target.value); updateDraft({ replicas: Number.isNaN(n) ? 0 : Math.max(0, n) }); }} data-testid="settings-replicas" />
+              </label>
+              <label className="space-y-1 block">
+                <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Port</span>
+                <TInput value={draft.port} onChange={(e) => updateDraft({ port: e.target.value })} placeholder="8080" data-testid="settings-port" />
+              </label>
+              <label className="space-y-1 block">
+                <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Depends on (comma-separated)</span>
+                <TInput
+                  value={draft.dependsOn.join(', ')}
+                  onChange={(e) => updateDraft({ dependsOn: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
+                  placeholder="postgres"
+                  data-testid="settings-depends-on"
+                />
+              </label>
+            </div>
 
-          <div className="flex items-center justify-end">
-            <Btn variant="primary" size="sm" disabled={patchPending} onClick={() => onSave(active)} data-testid={`settings-save-${active}`}>
-              {patchPending && savingComponent === active ? 'Saving…' : 'Save workload spec'}
-            </Btn>
+            <div className="space-y-2 rounded-md p-3" style={{ border: '1px solid var(--border)' }}>
+              <label className="inline-flex items-center gap-2 text-[11.5px]" style={{ color: 'var(--text-2)' }}>
+                <input type="checkbox" checked={draft.ingressEnabled} onChange={(e) => updateDraft({ ingressEnabled: e.target.checked })} data-testid="settings-ingress-toggle" />
+                Enable ingress
+              </label>
+              {draft.ingressEnabled ? (
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="space-y-1 block">
+                    <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Ingress host</span>
+                    <TInput value={draft.ingressHost} onChange={(e) => updateDraft({ ingressHost: e.target.value })} placeholder="app.example.com" data-testid="settings-ingress-host" />
+                  </label>
+                  <label className="space-y-1 block">
+                    <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Ingress path</span>
+                    <TInput value={draft.ingressPath} onChange={(e) => updateDraft({ ingressPath: e.target.value })} placeholder="/" data-testid="settings-ingress-path" />
+                  </label>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="space-y-1 block">
+                <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Resources (JSON object)</span>
+                <TTextarea value={draft.resourcesJson} onChange={(e) => updateDraft({ resourcesJson: e.target.value })} className="min-h-28" data-testid="settings-resources" />
+              </label>
+              <label className="space-y-1 block">
+                <span className="text-[11.5px]" style={{ color: 'var(--text-3)' }}>Params / values (JSON object)</span>
+                <TTextarea value={draft.paramsJson} onChange={(e) => updateDraft({ paramsJson: e.target.value })} className="min-h-28" data-testid="settings-params" />
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end">
+              <Btn variant="primary" size="sm" disabled={patchPending} onClick={() => onSave(active)} data-testid={`settings-save-${active}`}>
+                {patchPending && savingComponent === active ? 'Saving…' : 'Save workload spec'}
+              </Btn>
+            </div>
           </div>
-        </div>
+        )}
       </Card>
     </div>
   );
