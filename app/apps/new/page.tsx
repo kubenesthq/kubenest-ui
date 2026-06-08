@@ -1,7 +1,6 @@
 'use client';
 
 import { Suspense, useState, useCallback, useMemo } from 'react';
-import { load as yamlLoad, YAMLException } from 'js-yaml';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -13,7 +12,6 @@ import {
   Database,
   Globe,
   Layers,
-  Package,
   Plus,
   Server,
   Trash2,
@@ -44,13 +42,8 @@ const k8sNameRegex = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 
 type WorkloadKind = 'web-service' | 'worker';
 
-type DeployMode = 'image' | 'chart';
-
 interface WorkloadFormData {
-  deployMode: DeployMode;
   image: string;
-  chart: ChartSpec;
-  valuesYaml: string;
   replicas: number;
   port: number | null;
   ingressEnabled: boolean;
@@ -143,20 +136,6 @@ function WorkloadCard({
   const addEnv = () => updateWorkload({ env: [...w.env, { name: '', value: '' }] });
   const nameError = component.name.length > 0 && !k8sNameRegex.test(component.name);
 
-  const modeBtn = (mode: DeployMode, label: string, onClick: () => void) => {
-    const on = w.deployMode === mode;
-    return (
-      <button
-        type="button"
-        onClick={onClick}
-        style={{ background: on ? 'var(--accent)' : 'var(--surface-2)', color: on ? 'var(--on-accent)' : 'var(--text-2)' }}
-        className="px-2.5 h-7 rounded-md text-[12px] font-medium transition-colors hover:opacity-90"
-      >
-        {label}
-      </button>
-    );
-  };
-
   const kindBtn = (kind: WorkloadKind, label: string, onClick: () => void) => {
     const on = w.kind === kind;
     return (
@@ -171,18 +150,11 @@ function WorkloadCard({
     );
   };
 
-  const isChart = w.deployMode === 'chart';
-  const updateChart = (patch: Partial<ChartSpec>) => updateWorkload({ chart: { ...w.chart, ...patch } });
-  const [valuesOpen, setValuesOpen] = useState(false);
-  const [yamlError, setYamlError] = useState<string | null>(null);
+  const cardIcon = w.kind === 'web-service'
+    ? <Globe className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
+    : <Cog className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />;
 
-  const cardIcon = isChart
-    ? <Package className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-    : w.kind === 'web-service'
-      ? <Globe className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />
-      : <Cog className="h-3.5 w-3.5" style={{ color: 'var(--accent)' }} />;
-
-  const cardSubtitle = isChart ? 'Helm chart' : w.kind === 'web-service' ? 'Web service' : 'Worker';
+  const cardSubtitle = w.kind === 'web-service' ? 'Web service' : 'Worker';
 
   return (
     <ComponentCardShell
@@ -201,155 +173,74 @@ function WorkloadCard({
       </div>
 
       <div>
-        <FieldLabel>Deploy mode</FieldLabel>
+        <FieldLabel>Type</FieldLabel>
         <div className="flex gap-2">
-          {modeBtn('image', 'Container image', () => updateWorkload({ deployMode: 'image' }))}
-          {modeBtn('chart', 'Helm chart', () => updateWorkload({ deployMode: 'chart', port: null, ingressEnabled: false, ingressHost: '' }))}
+          {kindBtn('web-service', 'Web service', () => updateWorkload({ kind: 'web-service', port: w.port ?? 8080 }))}
+          {kindBtn('worker', 'Worker', () => updateWorkload({ kind: 'worker', port: null, ingressEnabled: false, ingressHost: '' }))}
         </div>
       </div>
 
-      {isChart ? (
-        <>
-          <div>
-            <FieldLabel required>Chart repository URL</FieldLabel>
-            <TInput
-              placeholder="https://charts.bitnami.com/bitnami"
-              value={w.chart.repo}
-              onChange={(e) => updateChart({ repo: e.target.value })}
-            />
-          </div>
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <FieldLabel required>Chart name</FieldLabel>
-              <TInput
-                placeholder="postgresql"
-                value={w.chart.name}
-                onChange={(e) => updateChart({ name: e.target.value })}
-              />
-            </div>
-            <div className="w-28">
-              <FieldLabel required>Version</FieldLabel>
-              <TInput
-                placeholder="15.5.0"
-                value={w.chart.version}
-                onChange={(e) => updateChart({ version: e.target.value })}
-              />
-            </div>
-          </div>
-          <div className="rounded-md px-3 py-2 text-[11.5px]" style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}>
-            Scaling and pause/resume are managed via chart values.
-          </div>
+      <div>
+        <FieldLabel required>Image</FieldLabel>
+        <TInput placeholder="myapp:latest" value={w.image} onChange={(e) => updateWorkload({ image: e.target.value })} />
+      </div>
 
-          <div>
-            <button
-              type="button"
-              onClick={() => setValuesOpen((v) => !v)}
-              className="text-[12px] flex items-center gap-1 hover:text-[var(--text)]"
-              style={{ color: 'var(--text-3)' }}
-            >
-              {valuesOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-              Values (optional)
+      <div className="flex gap-4">
+        {w.kind === 'web-service' && (
+          <div className="w-24">
+            <FieldLabel>Port</FieldLabel>
+            <TInput type="number" placeholder="8080" value={w.port ?? ''} onChange={(e) => updateWorkload({ port: e.target.value ? Number(e.target.value) : null })} />
+          </div>
+        )}
+        <div className="w-24">
+          <FieldLabel>Replicas</FieldLabel>
+          <TInput type="number" min={1} max={10} value={w.replicas} onChange={(e) => updateWorkload({ replicas: Number(e.target.value) || 1 })} />
+        </div>
+      </div>
+
+      {w.kind === 'web-service' && (
+        <div>
+          {!w.ingressEnabled ? (
+            <button type="button" onClick={() => updateWorkload({ ingressEnabled: true })} className="text-[12px] flex items-center gap-1 hover:text-[var(--text)]" style={{ color: 'var(--text-3)' }}>
+              <Plus className="h-3 w-3" /> Add a custom domain
             </button>
-            {valuesOpen && (
-              <div className="mt-2">
-                <textarea
-                  rows={10}
-                  placeholder={`# Override chart default values\n# Example (Bitnami postgresql):\n# auth:\n#   postgresPassword: mypassword\n# primary:\n#   persistence:\n#     size: 8Gi`}
-                  value={w.valuesYaml}
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    updateWorkload({ valuesYaml: raw });
-                    if (!raw.trim()) { setYamlError(null); return; }
-                    try { yamlLoad(raw); setYamlError(null); }
-                    catch { setYamlError('Invalid YAML'); }
-                  }}
-                  className="w-full rounded-md px-3 py-2 text-[12px] resize-y"
-                  style={{
-                    fontFamily: 'monospace',
-                    background: 'var(--surface-2)',
-                    color: 'var(--text)',
-                    border: `1px solid ${yamlError ? 'var(--err)' : 'var(--border)'}`,
-                    outline: 'none',
-                  }}
-                />
-                {yamlError && <p className="text-[11px] mt-1" style={{ color: 'var(--err)' }}>{yamlError}</p>}
-              </div>
-            )}
-          </div>
-        </>
-      ) : (
-        <>
-          <div>
-            <FieldLabel>Type</FieldLabel>
-            <div className="flex gap-2">
-              {kindBtn('web-service', 'Web service', () => updateWorkload({ kind: 'web-service', port: w.port ?? 8080 }))}
-              {kindBtn('worker', 'Worker', () => updateWorkload({ kind: 'worker', port: null, ingressEnabled: false, ingressHost: '' }))}
-            </div>
-          </div>
-
-          <div>
-            <FieldLabel required>Image</FieldLabel>
-            <TInput placeholder="myapp:latest" value={w.image} onChange={(e) => updateWorkload({ image: e.target.value })} />
-          </div>
-
-          <div className="flex gap-4">
-            {w.kind === 'web-service' && (
-              <div className="w-24">
-                <FieldLabel>Port</FieldLabel>
-                <TInput type="number" placeholder="8080" value={w.port ?? ''} onChange={(e) => updateWorkload({ port: e.target.value ? Number(e.target.value) : null })} />
-              </div>
-            )}
-            <div className="w-24">
-              <FieldLabel>Replicas</FieldLabel>
-              <TInput type="number" min={1} max={10} value={w.replicas} onChange={(e) => updateWorkload({ replicas: Number(e.target.value) || 1 })} />
-            </div>
-          </div>
-
-          {w.kind === 'web-service' && (
+          ) : (
             <div>
-              {!w.ingressEnabled ? (
-                <button type="button" onClick={() => updateWorkload({ ingressEnabled: true })} className="text-[12px] flex items-center gap-1 hover:text-[var(--text)]" style={{ color: 'var(--text-3)' }}>
-                  <Plus className="h-3 w-3" /> Add a custom domain
+              <div className="flex items-center justify-between mb-1">
+                <FieldLabel>Domain</FieldLabel>
+                <button type="button" onClick={() => updateWorkload({ ingressEnabled: false, ingressHost: '' })} className="hover:opacity-70" style={{ color: 'var(--text-3)' }}>
+                  <X className="h-3 w-3" />
                 </button>
-              ) : (
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <FieldLabel>Domain</FieldLabel>
-                    <button type="button" onClick={() => updateWorkload({ ingressEnabled: false, ingressHost: '' })} className="hover:opacity-70" style={{ color: 'var(--text-3)' }}>
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Globe className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--text-3)' }} />
-                    <TInput placeholder="app.example.com" value={w.ingressHost} onChange={(e) => updateWorkload({ ingressHost: e.target.value })} />
-                  </div>
-                </div>
-              )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Globe className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--text-3)' }} />
+                <TInput placeholder="app.example.com" value={w.ingressHost} onChange={(e) => updateWorkload({ ingressHost: e.target.value })} />
+              </div>
             </div>
           )}
-
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <FieldLabel>Environment variables</FieldLabel>
-              <button type="button" onClick={addEnv} className="text-[12px] flex items-center gap-1 hover:text-[var(--text)]" style={{ color: 'var(--text-3)' }}>
-                <Plus className="h-3 w-3" /> Add
-              </button>
-            </div>
-            {w.env.length > 0 && (
-              <div className="space-y-2">
-                {w.env.map((env, i) => (
-                  <EnvVarRow key={i} envVar={env} index={i} onUpdate={updateEnv} onRemove={removeEnv} addonComponents={addonComponents} addonDefinitions={addonDefinitions} />
-                ))}
-              </div>
-            )}
-            {addonComponents.length > 0 && (
-              <p className="text-[10.5px] mt-2" style={{ color: 'var(--text-4)' }}>
-                Tip: click the link icon on a row to use a value exported by an addon component (e.g. <span className="font-mono">DATABASE_URL</span> from your postgres component).
-              </p>
-            )}
-          </div>
-        </>
+        </div>
       )}
+
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <FieldLabel>Environment variables</FieldLabel>
+          <button type="button" onClick={addEnv} className="text-[12px] flex items-center gap-1 hover:text-[var(--text)]" style={{ color: 'var(--text-3)' }}>
+            <Plus className="h-3 w-3" /> Add
+          </button>
+        </div>
+        {w.env.length > 0 && (
+          <div className="space-y-2">
+            {w.env.map((env, i) => (
+              <EnvVarRow key={i} envVar={env} index={i} onUpdate={updateEnv} onRemove={removeEnv} addonComponents={addonComponents} addonDefinitions={addonDefinitions} />
+            ))}
+          </div>
+        )}
+        {addonComponents.length > 0 && (
+          <p className="text-[10.5px] mt-2" style={{ color: 'var(--text-4)' }}>
+            Tip: click the link icon on a row to use a value exported by an addon component (e.g. <span className="font-mono">DATABASE_URL</span> from your postgres component).
+          </p>
+        )}
+      </div>
     </ComponentCardShell>
   );
 }
@@ -591,7 +482,7 @@ function NewAppPageInner() {
         id: genId(),
         name: '',
         type: 'workload',
-        workload: { deployMode: 'image', image: '', chart: { repo: '', name: '', version: '' }, valuesYaml: '', replicas: 1, port: 8080, ingressEnabled: false, ingressHost: '', env: [], kind: 'web-service' },
+        workload: { image: '', replicas: 1, port: 8080, ingressEnabled: false, ingressHost: '', env: [], kind: 'web-service' },
         collapsed: false,
       },
     ]);
@@ -651,40 +542,12 @@ function NewAppPageInner() {
     const dupes = names.filter((n, i) => names.indexOf(n) !== i);
     if (dupes.length > 0) return setError(`Duplicate component name: "${dupes[0]}"`);
 
-    const noImage = components.find((c) => c.type === 'workload' && c.workload?.deployMode === 'image' && !c.workload?.image.trim());
+    const noImage = components.find((c) => c.type === 'workload' && !c.workload?.image.trim());
     if (noImage) return setError(`Workload "${noImage.name}" needs a container image`);
-
-    const badChart = components.find((c) => {
-      if (c.type !== 'workload' || c.workload?.deployMode !== 'chart') return false;
-      const ch = c.workload.chart;
-      return !ch.repo.trim() || !ch.name.trim() || !ch.version.trim();
-    });
-    if (badChart) return setError(`Workload "${badChart.name}" needs chart repository, name, and version`);
-
-    const badYaml = components.find((c) => {
-      if (c.type !== 'workload' || c.workload?.deployMode !== 'chart') return false;
-      const raw = c.workload.valuesYaml.trim();
-      if (!raw) return false;
-      try { yamlLoad(raw); return false; } catch { return true; }
-    });
-    if (badYaml) return setError(`Workload "${badYaml.name}" has invalid YAML values`);
 
     const appComponents: AppComponent[] = components.map((c) => {
       if (c.type === 'workload') {
         const w = c.workload!;
-        if (w.deployMode === 'chart') {
-          let parsedValues: Record<string, unknown> | undefined;
-          if (w.valuesYaml.trim()) {
-            const loaded = yamlLoad(w.valuesYaml) as Record<string, unknown>;
-            if (loaded && typeof loaded === 'object') parsedValues = loaded;
-          }
-          return {
-            name: c.name,
-            type: 'workload' as const,
-            depends_on: buildDependsOn(c),
-            workload_spec: { chart: w.chart, ...(parsedValues ? { values: parsedValues } : {}) },
-          };
-        }
         const envVars: AppEnvVar[] = w.env
           .filter((e) => e.name.trim())
           .map((e) => (e.export_ref ? { name: e.name, export_ref: e.export_ref } : { name: e.name, value: e.value ?? '' }));
