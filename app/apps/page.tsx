@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAuth } from '@/hooks/useAuth';
 import { appsApi } from '@/lib/api/apps';
+import { getAllProjects } from '@/api/projects';
 
 const statusColors: Record<string, string> = {
   running: 'bg-emerald-100 text-emerald-700',
@@ -26,6 +27,8 @@ const statusDots: Record<string, string> = {
   failed: 'bg-red-500',
 };
 
+const STALE_PHASES = new Set(['unknown', '']);
+
 export default function AppsPage() {
   const { isAuthenticated } = useAuth(true);
   const router = useRouter();
@@ -38,9 +41,19 @@ export default function AppsPage() {
     refetchInterval: 15000,
   });
 
+  const projectsQuery = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => getAllProjects(),
+  });
+
   if (!isAuthenticated) return null;
 
-  const apps = appsQuery.data?.data ?? [];
+  const projectNames = new Map(
+    (projectsQuery.data?.data ?? []).map((p) => [p.id, p.display_name ?? p.name]),
+  );
+
+  const allApps = appsQuery.data?.data ?? [];
+  const apps = allApps.filter((app) => !STALE_PHASES.has(app.phase.toLowerCase()));
   const isLoading = appsQuery.isLoading;
   const hasAnything = apps.length > 0;
 
@@ -119,7 +132,9 @@ export default function AppsPage() {
                         <p className="font-medium text-zinc-900">{app.name}</p>
                       </TableCell>
                       <TableCell>
-                        <span className="text-sm text-zinc-600">{app.namespace}</span>
+                        <span className="text-sm text-zinc-600">
+                          {projectNames.get(app.project_id) ?? app.namespace}
+                        </span>
                       </TableCell>
                       <TableCell>
                         <Badge variant="secondary" className="text-xs font-normal bg-zinc-100 text-zinc-600">
