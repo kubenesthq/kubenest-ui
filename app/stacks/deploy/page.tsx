@@ -2,13 +2,61 @@
 
 import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, CheckCircle2, Layers, Loader2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Layers, Loader2, Package } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useStackTemplate, useDeployStackTemplate } from '@/hooks/useStackTemplates';
 import { apiClient } from '@/lib/api-client';
 import { Btn, Card, Pill } from '@/components/shell/primitives';
+import type {
+  ParameterSpec,
+  StackTemplateComponent,
+} from '@/lib/api/stack-templates';
 import type { ProjectListResponse } from '@/types/api';
+
+interface ChartInfo {
+  name: string;
+  version: string;
+}
+
+/**
+ * Pull a chart {name, version} from a template component, regardless of
+ * whether it lives on `workloadSpec.chart` (chart-mode workloads, kn-fzw) or
+ * `addonSpec.chart` (always chart-shaped). Returns null for image-mode
+ * workloads so the caller renders the existing `name · type` pill.
+ */
+function getComponentChartSpec(component: StackTemplateComponent): ChartInfo | null {
+  const candidates: Array<Record<string, unknown> | undefined> = [
+    component.workloadSpec as Record<string, unknown> | undefined,
+    component.addonSpec as Record<string, unknown> | undefined,
+  ];
+  for (const spec of candidates) {
+    if (!spec) continue;
+    const chart = spec.chart;
+    if (chart && typeof chart === 'object') {
+      const c = chart as Record<string, unknown>;
+      const name = typeof c.name === 'string' ? c.name : '';
+      const version = typeof c.version === 'string' ? c.version : '';
+      if (name || version) return { name, version };
+    }
+  }
+  return null;
+}
+
+/**
+ * Coerce a parameter's raw user input to the type the backend expects.
+ * Returns undefined when the user didn't provide a value so callers can omit
+ * the key entirely (letting the backend apply its default / generator).
+ */
+function coerceParamValue(spec: ParameterSpec, raw: string | undefined): unknown {
+  if (raw === undefined || raw === '') return undefined;
+  if (spec.type === 'integer') {
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  if (spec.type === 'boolean') return raw === 'true';
+  return raw;
+}
 
 function TInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   const { className = '', style, ...rest } = props;
@@ -74,10 +122,8 @@ function StackDeployForm() {
 
     const resolvedParams: Record<string, unknown> = {};
     for (const [key, spec] of paramEntries) {
-      const userVal = paramValues[key];
-      if (userVal !== undefined && userVal !== '') {
-        resolvedParams[key] = spec.type === 'integer' ? parseInt(userVal, 10) : spec.type === 'boolean' ? userVal === 'true' : userVal;
-      }
+      const coerced = coerceParamValue(spec, paramValues[key]);
+      if (coerced !== undefined) resolvedParams[key] = coerced;
     }
 
     deployMutation.mutate(
@@ -125,9 +171,27 @@ function StackDeployForm() {
         </h1>
         {template.description && <p className="text-[12.5px] mt-1" style={{ color: 'var(--text-3)' }}>{template.description}</p>}
         <div className="flex flex-wrap gap-1.5 mt-2">
-          {template.components.map((c) => (
-            <Pill key={c.name} tone="default" size="sm">{c.name} · {c.type}</Pill>
-          ))}
+          {template.components.map((c) => {
+            const chart = getComponentChartSpec(c);
+            if (chart) {
+              const versionSuffix = chart.version ? ` @ ${chart.version}` : '';
+              return (
+                <span
+                  key={c.name}
+                  title="External Helm chart — image/replicas/port/ingress fields don't apply"
+                  data-testid={`deploy-component-chart-${c.name}`}
+                >
+                  <Pill tone="accent" size="sm">
+                    <Package className="h-3 w-3" />
+                    <span>{c.name} · Chart: {chart.name || '(unnamed)'}{versionSuffix}</span>
+                  </Pill>
+                </span>
+              );
+            }
+            return (
+              <Pill key={c.name} tone="default" size="sm">{c.name} · {c.type}</Pill>
+            );
+          })}
         </div>
       </div>
 
@@ -165,27 +229,13 @@ function StackDeployForm() {
               <div className="space-y-3">
                 <p className="text-[12px]" style={{ color: 'var(--text-3)' }}>Answer the template’s parameters:</p>
                 {paramEntries.map(([key, spec]) => (
-                  <div key={key} className="space-y-1">
-                    <label htmlFor={`p-${key}`} className="text-[11.5px] font-medium block" style={{ color: 'var(--text-3)' }}>
-                      {key}{spec.required && <span style={{ color: 'var(--err)' }} className="ml-0.5">*</span>}
-                    </label>
-                    {spec.type === 'boolean' ? (
-                      <TSelect value={paramValues[key] ?? String(spec.default ?? 'false')} onChange={(e) => setParamValues({ ...paramValues, [key]: e.target.value })}>
-                        <option value="true">true</option>
-                        <option value="false">false</option>
-                      </TSelect>
-                    ) : (
-                      <TInput
-                        id={`p-${key}`}
-                        type={spec.type === 'integer' ? 'number' : 'text'}
-                        placeholder={spec.default !== undefined ? String(spec.default) : ''}
-                        value={paramValues[key] ?? ''}
-                        onChange={(e) => setParamValues({ ...paramValues, [key]: e.target.value })}
-                      />
-                    )}
-                    {spec.description && <p className="text-[10.5px]" style={{ color: 'var(--text-4)' }}>{spec.description}</p>}
-                    {spec.generator && <p className="text-[10.5px]" style={{ color: 'var(--accent)' }}>Auto-generated ({spec.generator}) if left blank</p>}
-                  </div>
+                  <ParameterField
+                    key={key}
+                    paramKey={key}
+                    spec={spec}
+                    rawValue={paramValues[key]}
+                    onChange={(next) => setParamValues({ ...paramValues, [key]: next })}
+                  />
                 ))}
               </div>
             )}
@@ -197,6 +247,126 @@ function StackDeployForm() {
             </Btn>
           </div>
         </Card>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Renders a single ParameterSpec as the appropriate input:
+ *   - boolean              → checkbox, initial visual = `spec.default`
+ *   - string + enum (>=1)  → <select> with the enum options
+ *   - integer              → number input
+ *   - string (no enum)     → text input
+ *
+ * `rawValue` is the user-touched value (string); `undefined` means untouched
+ * and the caller's submit pass will omit the key so the backend applies its
+ * default or generator. Generator-backed string params show a placeholder
+ * inviting the user to leave the field blank.
+ */
+function ParameterField({
+  paramKey,
+  spec,
+  rawValue,
+  onChange,
+}: {
+  paramKey: string;
+  spec: ParameterSpec;
+  rawValue: string | undefined;
+  onChange: (next: string) => void;
+}) {
+  const inputId = `p-${paramKey}`;
+  const requiredMark = spec.required && (
+    <span style={{ color: 'var(--err)' }} className="ml-0.5" aria-hidden>*</span>
+  );
+  const requiredA11yLabel = spec.required ? ' (required)' : '';
+
+  const generatorHint = spec.generator
+    ? `leave blank to auto-generate (${spec.generator})`
+    : null;
+  const defaultHint =
+    spec.default !== undefined && spec.default !== null && spec.default !== ''
+      ? String(spec.default)
+      : null;
+  // Generator-backed params explicitly direct users to leave the field empty,
+  // so prefer that hint over the (often empty) default value.
+  const placeholder = generatorHint ?? defaultHint ?? '';
+
+  const stringEnum = spec.type === 'string' && Array.isArray(spec.enum) && spec.enum.length > 0
+    ? spec.enum
+    : null;
+
+  let input: React.ReactNode;
+  if (spec.type === 'boolean') {
+    // Untouched: the visual reflects `spec.default` but the value stays
+    // undefined upstream, so the submit pass omits the key and the backend
+    // applies its default. The first click stamps an explicit 'true'/'false'.
+    const visualChecked = rawValue === undefined
+      ? Boolean(spec.default)
+      : rawValue === 'true';
+    input = (
+      <label className="inline-flex items-center gap-2 text-[12.5px]" htmlFor={inputId} style={{ color: 'var(--text-2)' }}>
+        <input
+          id={inputId}
+          type="checkbox"
+          checked={visualChecked}
+          onChange={(e) => onChange(e.target.checked ? 'true' : 'false')}
+          aria-label={`${paramKey}${requiredA11yLabel}`}
+          data-testid={`deploy-param-${paramKey}`}
+        />
+        <span>{visualChecked ? 'true' : 'false'}</span>
+      </label>
+    );
+  } else if (stringEnum) {
+    input = (
+      <TSelect
+        id={inputId}
+        value={rawValue ?? ''}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={`${paramKey}${requiredA11yLabel}`}
+        data-testid={`deploy-param-${paramKey}`}
+      >
+        <option value="">
+          {defaultHint ? `Default: ${defaultHint}` : 'Select…'}
+        </option>
+        {stringEnum.map((option) => (
+          <option key={String(option)} value={String(option)}>{String(option)}</option>
+        ))}
+      </TSelect>
+    );
+  } else {
+    input = (
+      <TInput
+        id={inputId}
+        type={spec.type === 'integer' ? 'number' : 'text'}
+        placeholder={placeholder}
+        value={rawValue ?? ''}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={`${paramKey}${requiredA11yLabel}`}
+        data-testid={`deploy-param-${paramKey}`}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      <label htmlFor={inputId} className="text-[11.5px] font-medium block" style={{ color: 'var(--text-3)' }}>
+        {paramKey}
+        {requiredMark}
+        {!spec.required && spec.generator && (
+          <span className="ml-1 text-[10.5px] font-normal" style={{ color: 'var(--text-4)' }}>
+            (optional)
+          </span>
+        )}
+      </label>
+      {input}
+      {spec.description && (
+        <p className="text-[10.5px]" style={{ color: 'var(--text-4)' }}>{spec.description}</p>
+      )}
+      {spec.generator && (
+        <p className="text-[10.5px]" style={{ color: 'var(--accent)' }}>
+          Auto-generated ({spec.generator}) if left blank
+        </p>
       )}
     </div>
   );

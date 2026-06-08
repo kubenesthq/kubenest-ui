@@ -32,6 +32,11 @@ export interface ParameterSpec {
   component: string;
   path: string;
   generator?: string;
+  // Optional enum list for string params. The backend doesn't surface this yet
+  // (chart_inspector only carries type/description/default/required), but the
+  // deploy form renders a dropdown when it's present so we can light up the
+  // path the moment the inspector starts forwarding the schema's `enum`.
+  enum?: ReadonlyArray<string | number>;
 }
 
 export interface StackTemplateList {
