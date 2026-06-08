@@ -456,6 +456,7 @@ export interface AppEnvVar {
 
 export interface WorkloadSpec {
   image?: string;
+  chart?: ChartSpec;
   replicas?: number;
   port?: number | null;
   env?: AppEnvVar[];
