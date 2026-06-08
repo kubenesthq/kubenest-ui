@@ -28,7 +28,6 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import {
   useCreateStackTemplateFromApp,
-  useCreateStackTemplateFromChart,
   useDeleteStackTemplate,
   useInstallRegistryTemplate,
   useRegistryTemplates,
@@ -36,64 +35,11 @@ import {
 } from '@/hooks/useStackTemplates';
 import { apiClient } from '@/lib/api-client';
 import type {
-  ChartParameterSpec,
   RegistrySource,
-  StackTemplateFromChart,
   StackTemplateRead,
 } from '@/lib/api/stack-templates';
 import type { AppList, ProjectListResponse } from '@/types/api';
-
-type ChartParamType = 'string' | 'integer' | 'boolean';
-type ChartParamGenerator = NonNullable<ChartParameterSpec['generator']>;
-
-interface ChartParamDraft {
-  key: string;
-  type: ChartParamType;
-  component: string;
-  path: string;
-  description: string;
-  defaultValue: string;
-  required: boolean;
-  generator: ChartParamGenerator | '';
-}
-
-const CHART_PARAM_GENERATOR_OPTIONS: Record<string, ChartParamGenerator | ''> = {
-  _none: '',
-  random_hex_32: 'random_hex_32',
-  random_hex_16: 'random_hex_16',
-  random_password: 'random_password',
-  uuid: 'uuid',
-};
-
-function parseChartParamGenerator(value: string): ChartParamGenerator | '' {
-  return CHART_PARAM_GENERATOR_OPTIONS[value] ?? '';
-}
-
-function emptyChartParam(componentName: string): ChartParamDraft {
-  return {
-    key: '',
-    type: 'string',
-    component: componentName,
-    path: '',
-    description: '',
-    defaultValue: '',
-    required: false,
-    generator: '',
-  };
-}
-
-function coerceDefaultValue(raw: string, type: ChartParamType): unknown {
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  if (type === 'integer') {
-    const parsed = Number.parseInt(trimmed, 10);
-    return Number.isNaN(parsed) ? undefined : parsed;
-  }
-  if (type === 'boolean') {
-    return trimmed.toLowerCase() === 'true';
-  }
-  return raw;
-}
+import { FromChartWizard } from '@/components/stack-templates/FromChartWizard';
 
 export default function StacksPage() {
   const { isAuthenticated } = useAuth(true);
@@ -112,17 +58,7 @@ export default function StacksPage() {
   const [fromAppPreserveExportRefs, setFromAppPreserveExportRefs] = useState(true);
   const [fromAppError, setFromAppError] = useState<string | null>(null);
 
-  const [showFromChartDialog, setShowFromChartDialog] = useState(false);
-  const [chartTemplateName, setChartTemplateName] = useState('');
-  const [chartDescription, setChartDescription] = useState('');
-  const [chartComponentName, setChartComponentName] = useState('web');
-  const [chartComponentType, setChartComponentType] = useState<'workload' | 'addon'>('workload');
-  const [chartRepo, setChartRepo] = useState('https://charts.bitnami.com/bitnami');
-  const [chartName, setChartName] = useState('nginx');
-  const [chartVersion, setChartVersion] = useState('21.0.7');
-  const [chartValuesJson, setChartValuesJson] = useState('');
-  const [chartParams, setChartParams] = useState<ChartParamDraft[]>([]);
-  const [chartError, setChartError] = useState<string | null>(null);
+  const [showFromChartWizard, setShowFromChartWizard] = useState(false);
 
   const [registryDraftRepo, setRegistryDraftRepo] = useState('');
   const [registryDraftRef, setRegistryDraftRef] = useState('');
@@ -134,12 +70,11 @@ export default function StacksPage() {
   const deleteMutation = useDeleteStackTemplate();
   const installMutation = useInstallRegistryTemplate();
   const createFromAppMutation = useCreateStackTemplateFromApp();
-  const createFromChartMutation = useCreateStackTemplateFromChart();
 
   const { data: projectsData } = useQuery({
     queryKey: ['projects-all'],
     queryFn: () => apiClient.get<ProjectListResponse>('/projects?items_per_page=100'),
-    enabled: showFromAppDialog || showFromChartDialog,
+    enabled: showFromAppDialog,
   });
   const projects = projectsData?.data ?? [];
 
@@ -255,105 +190,6 @@ export default function StacksPage() {
     );
   };
 
-  const updateChartParam = (index: number, patch: Partial<ChartParamDraft>) => {
-    setChartParams((prev) => prev.map((row, idx) => (idx === index ? { ...row, ...patch } : row)));
-  };
-
-  const addChartParam = () => {
-    setChartParams((prev) => [...prev, emptyChartParam(chartComponentName.trim() || 'component')]);
-  };
-
-  const removeChartParam = (index: number) => {
-    setChartParams((prev) => prev.filter((_, idx) => idx !== index));
-  };
-
-  const resetFromChartDialog = () => {
-    setShowFromChartDialog(false);
-    setChartTemplateName('');
-    setChartDescription('');
-    setChartComponentName('web');
-    setChartComponentType('workload');
-    setChartRepo('https://charts.bitnami.com/bitnami');
-    setChartName('nginx');
-    setChartVersion('21.0.7');
-    setChartValuesJson('');
-    setChartParams([]);
-    setChartError(null);
-  };
-
-  const handleCreateFromChart = () => {
-    const templateName = chartTemplateName.trim();
-    const componentName = chartComponentName.trim();
-    const repo = chartRepo.trim();
-    const name = chartName.trim();
-    const version = chartVersion.trim();
-
-    if (!templateName || !componentName || !repo || !name || !version) {
-      setChartError('Template name, component name, and chart repo/name/version are required.');
-      return;
-    }
-
-    setChartError(null);
-
-    let values: Record<string, unknown> | undefined;
-    if (chartValuesJson.trim()) {
-      try {
-        const parsed = JSON.parse(chartValuesJson) as unknown;
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-          setChartError('Chart values must be a JSON object.');
-          return;
-        }
-        values = parsed as Record<string, unknown>;
-      } catch (err) {
-        setChartError(err instanceof Error ? `Chart values JSON is invalid: ${err.message}` : 'Chart values JSON is invalid.');
-        return;
-      }
-    }
-
-    const parameters: Record<string, ChartParameterSpec> = {};
-    for (const row of chartParams) {
-      const key = row.key.trim();
-      if (!key) continue;
-      const component = row.component.trim() || componentName;
-      const path = row.path.trim();
-      if (!path) {
-        setChartError(`Parameter "${key}" is missing its values path.`);
-        return;
-      }
-      const param: ChartParameterSpec = {
-        type: row.type,
-        component,
-        path,
-        required: row.required,
-      };
-      const description = row.description.trim();
-      if (description) param.description = description;
-      const defaultValue = coerceDefaultValue(row.defaultValue, row.type);
-      if (defaultValue !== undefined) param.default = defaultValue;
-      if (row.generator) param.generator = row.generator;
-      parameters[key] = param;
-    }
-
-    const payload: StackTemplateFromChart = {
-      name: templateName,
-      description: chartDescription.trim() || undefined,
-      component_name: componentName,
-      component_type: chartComponentType,
-      chart: {
-        repo,
-        name,
-        version,
-      },
-      values,
-      parameters: Object.keys(parameters).length > 0 ? parameters : undefined,
-    };
-
-    createFromChartMutation.mutate(payload, {
-      onSuccess: () => resetFromChartDialog(),
-      onError: (err) => setChartError(err instanceof Error ? err.message : 'Failed to create template from chart'),
-    });
-  };
-
   if (!isAuthenticated) return null;
 
   return (
@@ -368,7 +204,7 @@ export default function StacksPage() {
             <Plus className="h-3.5 w-3.5 mr-1.5" />
             From App
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setShowFromChartDialog(true)} data-testid="open-from-chart">
+          <Button variant="outline" size="sm" onClick={() => setShowFromChartWizard(true)} data-testid="open-from-chart">
             <Plus className="h-3.5 w-3.5 mr-1.5" />
             From Chart
           </Button>
@@ -679,249 +515,12 @@ export default function StacksPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showFromChartDialog} onOpenChange={(open) => (open ? setShowFromChartDialog(true) : resetFromChartDialog())}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Create Template from Chart</DialogTitle>
-            <DialogDescription>
-              Wrap a Helm chart as a reusable template and expose selected values as deploy-time parameters.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-2">
-              <div>
-                <Label htmlFor="chart-template-name">Template Name</Label>
-                <Input
-                  id="chart-template-name"
-                  placeholder="nginx-stack"
-                  value={chartTemplateName}
-                  onChange={(e) => setChartTemplateName(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="chart-template-desc">Description</Label>
-                <Input
-                  id="chart-template-desc"
-                  placeholder="Template generated from a Helm chart"
-                  value={chartDescription}
-                  onChange={(e) => setChartDescription(e.target.value)}
-                />
-              </div>
-            </div>
+      <FromChartWizard
+        open={showFromChartWizard}
+        onClose={() => setShowFromChartWizard(false)}
+        onSuccess={(template) => router.push(`/settings/stack-templates/${template.namespace}/${template.name}`)}
+      />
 
-            <div className="grid gap-3 md:grid-cols-2">
-              <div>
-                <Label htmlFor="chart-component-name">Component Name</Label>
-                <Input
-                  id="chart-component-name"
-                  placeholder="web"
-                  value={chartComponentName}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    setChartComponentName(next);
-                    setChartParams((prev) =>
-                      prev.map((row) =>
-                        row.component.trim().length === 0 || row.component === chartComponentName
-                          ? { ...row, component: next }
-                          : row,
-                      ),
-                    );
-                  }}
-                />
-              </div>
-              <div>
-                <Label htmlFor="chart-component-type">Component Type</Label>
-                <Select value={chartComponentType} onValueChange={(value) => setChartComponentType(value as 'workload' | 'addon')}>
-                  <SelectTrigger id="chart-component-type">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="workload">workload</SelectItem>
-                    <SelectItem value="addon">addon</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-3">
-              <div>
-                <Label htmlFor="chart-repo">Chart Repo</Label>
-                <Input
-                  id="chart-repo"
-                  placeholder="https://charts.bitnami.com/bitnami"
-                  value={chartRepo}
-                  onChange={(e) => setChartRepo(e.target.value)}
-                  className="font-mono text-xs"
-                />
-              </div>
-              <div>
-                <Label htmlFor="chart-name">Chart Name</Label>
-                <Input
-                  id="chart-name"
-                  placeholder="nginx"
-                  value={chartName}
-                  onChange={(e) => setChartName(e.target.value)}
-                  className="font-mono text-xs"
-                />
-              </div>
-              <div>
-                <Label htmlFor="chart-version">Chart Version</Label>
-                <Input
-                  id="chart-version"
-                  placeholder="21.0.7"
-                  value={chartVersion}
-                  onChange={(e) => setChartVersion(e.target.value)}
-                  className="font-mono text-xs"
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="chart-values">Values JSON (optional)</Label>
-              <Textarea
-                id="chart-values"
-                rows={6}
-                placeholder={'{\n  "service": { "type": "ClusterIP" },\n  "replicaCount": 1\n}'}
-                value={chartValuesJson}
-                onChange={(e) => setChartValuesJson(e.target.value)}
-                className="font-mono text-xs"
-              />
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label>Deploy-time Parameters</Label>
-                <Button type="button" variant="outline" size="sm" onClick={addChartParam}>
-                  <Plus className="h-3.5 w-3.5 mr-1.5" />
-                  Add Parameter
-                </Button>
-              </div>
-              {chartParams.length > 0 ? (
-                <div className="space-y-3">
-                  {chartParams.map((row, index) => (
-                    <Card key={`${index}-${row.key}`} className="border-zinc-200">
-                      <CardContent className="pt-4 pb-4 space-y-3">
-                        <div className="grid gap-3 md:grid-cols-3">
-                          <div>
-                            <Label>Key</Label>
-                            <Input
-                              placeholder="db_storage"
-                              value={row.key}
-                              onChange={(e) => updateChartParam(index, { key: e.target.value })}
-                              className="font-mono text-xs"
-                            />
-                          </div>
-                          <div>
-                            <Label>Type</Label>
-                            <Select value={row.type} onValueChange={(value) => updateChartParam(index, { type: value as ChartParamType })}>
-                              <SelectTrigger><SelectValue /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="string">string</SelectItem>
-                                <SelectItem value="integer">integer</SelectItem>
-                                <SelectItem value="boolean">boolean</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div>
-                            <Label>Generator</Label>
-                            <Select
-                              value={row.generator || '_none'}
-                              onValueChange={(value) =>
-                                updateChartParam(index, { generator: parseChartParamGenerator(value) })
-                              }
-                            >
-                              <SelectTrigger><SelectValue /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="_none">none</SelectItem>
-                                <SelectItem value="random_hex_32">random_hex_32</SelectItem>
-                                <SelectItem value="random_hex_16">random_hex_16</SelectItem>
-                                <SelectItem value="random_password">random_password</SelectItem>
-                                <SelectItem value="uuid">uuid</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                        <div className="grid gap-3 md:grid-cols-3">
-                          <div>
-                            <Label>Component</Label>
-                            <Input
-                              placeholder={chartComponentName || 'component'}
-                              value={row.component}
-                              onChange={(e) => updateChartParam(index, { component: e.target.value })}
-                              className="font-mono text-xs"
-                            />
-                          </div>
-                          <div>
-                            <Label>Values Path</Label>
-                            <Input
-                              placeholder="service.type"
-                              value={row.path}
-                              onChange={(e) => updateChartParam(index, { path: e.target.value })}
-                              className="font-mono text-xs"
-                            />
-                          </div>
-                          <div>
-                            <Label>Default</Label>
-                            <Input
-                              placeholder="ClusterIP"
-                              value={row.defaultValue}
-                              onChange={(e) => updateChartParam(index, { defaultValue: e.target.value })}
-                              className="font-mono text-xs"
-                            />
-                          </div>
-                        </div>
-                        <div className="grid gap-3 md:grid-cols-2">
-                          <div>
-                            <Label>Description</Label>
-                            <Input
-                              placeholder="Service type for ingress exposure"
-                              value={row.description}
-                              onChange={(e) => updateChartParam(index, { description: e.target.value })}
-                            />
-                          </div>
-                          <div className="flex items-end justify-between">
-                            <label className="flex items-center gap-2 text-sm text-zinc-700">
-                              <input
-                                type="checkbox"
-                                checked={row.required}
-                                onChange={(e) => updateChartParam(index, { required: e.target.checked })}
-                                className="rounded border-zinc-300"
-                              />
-                              Required
-                            </label>
-                            <Button type="button" variant="ghost" size="sm" onClick={() => removeChartParam(index)}>
-                              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                              Remove
-                            </Button>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-zinc-500">No parameters configured. Deployers will use chart defaults unless overridden via values.</p>
-              )}
-            </div>
-
-            {chartError && (
-              <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{chartError}</div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={resetFromChartDialog} disabled={createFromChartMutation.isPending}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreateFromChart}
-              disabled={createFromChartMutation.isPending || !chartTemplateName.trim() || !chartComponentName.trim()}
-              data-testid="from-chart-create-template"
-            >
-              {createFromChartMutation.isPending ? 'Creating...' : 'Create Template'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={!!installTarget} onOpenChange={() => { setInstallTarget(null); setInstallNamespace(''); }}>
         <DialogContent>

@@ -7,6 +7,7 @@ import {
   type StackTemplateFromApp,
   type StackTemplateFromChart,
 } from '@/lib/api/stack-templates';
+import type { ChartSpec } from '@/types/api';
 
 export function useStackTemplates(params?: { namespace?: string; scope?: string }) {
   return useQuery({
@@ -62,6 +63,15 @@ export function useCreateStackTemplateFromChart() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['stack-templates'] });
     },
+  });
+}
+
+// kn-3nm: chart inspection is user-triggered (the 'Inspect chart' button in
+// the from-chart wizard), so we expose it as a mutation rather than a query.
+// Caller decides when to fire and gets isPending / error for the UI.
+export function useInspectChart() {
+  return useMutation({
+    mutationFn: (chart: ChartSpec) => stackTemplatesApi.inspectChart(chart),
   });
 }
 

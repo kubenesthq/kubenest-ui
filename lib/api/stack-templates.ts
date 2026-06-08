@@ -135,6 +135,24 @@ export interface StackTemplateFromChart {
   parameters?: Record<string, ChartParameterSpec>;
 }
 
+// Shape returned by GET /stack-templates/inspect-chart (kn-d6v). The wizard
+// (kn-3nm) calls this to auto-populate the parameter editor for charts that
+// ship a values.schema.json. Charts without a schema still get `defaults`
+// (the parsed values.yaml) so the manual editor can be seeded.
+export interface InspectChartChartMetadata {
+  name: string;
+  version: string;
+  description?: string;
+}
+
+export interface InspectChartResponse {
+  has_schema: boolean;
+  chart_metadata: InspectChartChartMetadata;
+  schema: Record<string, unknown> | null;
+  defaults: Record<string, unknown>;
+  schema_warning?: string;
+}
+
 export interface RegistrySource {
   repo?: string;
   ref?: string;
@@ -180,6 +198,15 @@ export const stackTemplatesApi = {
 
   createFromChart: (data: StackTemplateFromChart) =>
     apiClient.post<StackTemplateRead>('/stack-templates/from-chart', data),
+
+  inspectChart: (chart: ChartSpec) => {
+    const query = new URLSearchParams({
+      repo: chart.repo,
+      name: chart.name,
+      version: chart.version,
+    });
+    return apiClient.get<InspectChartResponse>(`/stack-templates/inspect-chart?${query.toString()}`);
+  },
 
   delete: (namespace: string, name: string) =>
     apiClient.delete<void>(`/stack-templates/${namespace}/${name}`),
