@@ -51,16 +51,19 @@ function StubCard({ title, body, bead }: { title: string; body: string; bead: st
   );
 }
 
+// kn-rnyl phase A: this card deliberately renders NO credential and no command
+// containing one. Credentials are obtained by the CLI from POST
+// agent-credentials and never pass through a browser.
 function InstallInstructions({ clusterId }: { clusterId: string }) {
   const q = useQuery({
-    queryKey: ['cluster-install-command', clusterId],
-    queryFn: () => clustersApi.getInstallCommand(clusterId),
+    queryKey: ['cluster-install-instructions', clusterId],
+    queryFn: () => clustersApi.getInstallInstructions(clusterId),
   });
   const [copied, setCopied] = useState(false);
+  const cliCommand = q.data?.cli_command ?? `kubenest cluster connect --cluster ${clusterId}`;
   const copy = async () => {
-    if (!q.data?.command) return;
     try {
-      await navigator.clipboard.writeText(q.data.command);
+      await navigator.clipboard.writeText(cliCommand);
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
@@ -74,28 +77,25 @@ function InstallInstructions({ clusterId }: { clusterId: string }) {
         <span className="text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>Connect the operator</span>
       </div>
       <p className="text-[12px] mb-2.5" style={{ color: 'var(--text-3)' }}>
-        Run this in the target cluster (with <span className="font-mono">kubectl</span> access). The operator connects back to KubeNest over a websocket — the cluster shows <span className="font-medium" style={{ color: 'var(--text-2)' }}>Connected</span> once it&apos;s up.
+        Connect this cluster with the KubeNest CLI from a machine with <span className="font-mono">kubectl</span> access to it. The CLI signs in as you, obtains the cluster credentials directly, and installs the operator — no token ever appears in this console. The cluster shows <span className="font-medium" style={{ color: 'var(--text-2)' }}>Connected</span> once the operator is up.
       </p>
-      {q.isLoading ? (
-        <div className="rounded-md p-3 flex items-center gap-2 text-[12px]" style={{ background: 'var(--surface-3)', color: 'var(--text-3)' }}>
-          <Loader2 size={13} className="animate-spin" /> Fetching install command…
-        </div>
-      ) : q.data?.command ? (
-        <div className="relative">
-          <pre
-            className="rounded-md p-3 pr-10 text-[11.5px] font-mono whitespace-pre-wrap break-all"
-            style={{ background: 'var(--surface-3)', color: 'var(--text-2)' }}
-          >
-            {q.data.command}
-          </pre>
-          <button onClick={copy} title="Copy" className="absolute right-2 top-2 h-6 w-6 rounded inline-flex items-center justify-center hover:bg-[var(--surface-2)]" style={{ color: 'var(--text-3)' }}>
-            {copied ? <Check size={13} style={{ color: 'var(--ok)' }} /> : <Copy size={13} />}
-          </button>
-        </div>
-      ) : (
-        <div className="rounded-md p-3 text-[12px]" style={{ background: 'var(--err-soft)', color: 'var(--err)' }}>
-          Couldn&apos;t fetch the install command{q.error instanceof Error ? `: ${q.error.message}` : ''}.
-        </div>
+      <div className="relative">
+        <pre
+          className="rounded-md p-3 pr-10 text-[11.5px] font-mono whitespace-pre-wrap break-all"
+          style={{ background: 'var(--surface-3)', color: 'var(--text-2)' }}
+        >
+          {cliCommand}
+        </pre>
+        <button onClick={copy} title="Copy" className="absolute right-2 top-2 h-6 w-6 rounded inline-flex items-center justify-center hover:bg-[var(--surface-2)]" style={{ color: 'var(--text-3)' }}>
+          {copied ? <Check size={13} style={{ color: 'var(--ok)' }} /> : <Copy size={13} />}
+        </button>
+      </div>
+      {q.data && (
+        <p className="text-[11px] mt-2" style={{ color: 'var(--text-4)' }}>
+          Installs into <span className="font-mono">{q.data.namespace}</span>
+          {q.data.chart_ref ? <> from <span className="font-mono">{q.data.chart_ref}</span></> : null}.{' '}
+          <a href={q.data.docs_url} target="_blank" rel="noreferrer" className="underline">Install guide</a>
+        </p>
       )}
     </Card>
   );

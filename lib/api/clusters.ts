@@ -6,6 +6,7 @@ import type {
   ClusterCreateResponse,
   ClusterScaleRequest,
   ClusterScaleResponse,
+  InstallInstructions,
   ProjectListResponse,
 } from '@/types/api';
 
@@ -31,9 +32,9 @@ export const clustersApi = {
   getProjects: (clusterId: string) =>
     apiClient.get<ProjectListResponse>(`/projects?cluster_id=${clusterId}`),
 
-  // Get install command from server
-  getInstallCommand: (clusterId: string) =>
-    apiClient.get<{ command: string; token: string; cluster_id: string; hub_url: string }>(
-      `/clusters/${clusterId}/install-command`
-    ),
+  // Secret-free install instructions (kn-rnyl phase A). The old
+  // /install-command endpoint is a 410: it embedded credentials in a
+  // browser-renderable response, which is exactly what must never happen.
+  getInstallInstructions: (clusterId: string) =>
+    apiClient.get<InstallInstructions>(`/clusters/${clusterId}/install-instructions`),
 };
