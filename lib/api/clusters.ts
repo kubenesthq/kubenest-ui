@@ -1,6 +1,7 @@
 import { apiClient } from '../api-client';
 import type {
   Cluster,
+  ClusterHealth,
   ClusterListResponse,
   ClusterCreateRequest,
   ClusterCreateResponse,
@@ -16,6 +17,10 @@ export const clustersApi = {
 
   // Get single cluster (flat, access checked server-side)
   get: (id: string) => apiClient.get<Cluster>(`/clusters/${id}`),
+
+  // Evaluated always-on fleet facts, including the exact persisted restore
+  // drill result under the backup check's detail.last_restore_drill.
+  getHealth: (id: string) => apiClient.get<ClusterHealth>(`/clusters/${id}/health`),
 
   // Create cluster under an org
   create: (orgId: string, data: ClusterCreateRequest) =>

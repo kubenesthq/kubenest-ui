@@ -85,6 +85,45 @@ export interface Cluster {
   components?: ComponentsConfig | null;
 }
 
+export type FleetHealthStatus = 'ok' | 'unknown' | 'warning' | 'critical';
+
+export interface RestoreDrillResult {
+  status: 'never_run' | 'passed' | 'failed';
+  completed_at?: string;
+  backup?: string;
+  duration_seconds?: number;
+  verification?: {
+    mode: 'full';
+    objects: { restored: number; matched: number };
+    pvc_data: { restored: number; matched: number };
+  };
+  failure?: {
+    stage: string;
+    reason_code: string;
+    detail: string;
+  };
+}
+
+export interface ClusterHealthCheck {
+  check: string;
+  status: FleetHealthStatus;
+  reason_code: string;
+  message: string;
+  detail: Record<string, unknown>;
+}
+
+export interface ClusterHealth {
+  cluster_id: string;
+  cluster_name: string;
+  status: FleetHealthStatus;
+  checks: ClusterHealthCheck[];
+  reported_at?: string | null;
+  received_at?: string | null;
+  report_interval_seconds?: number | null;
+  bundle_version?: string | null;
+  thresholds_provisional?: boolean | null;
+}
+
 // kn-rnyl phase A: create responses are credential-free. The console shows the
 // CLI pointer; credentials are minted only by POST agent-credentials (CLI-side).
 export interface ClusterCreateResponse extends Cluster {

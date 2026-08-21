@@ -25,6 +25,7 @@ import { getConnectionStatus } from '@/types/api';
 import { Btn, Card, Pill, SectionLabel, StatusDot, statusTone } from '@/components/shell/primitives';
 import { ClusterMetrics } from '@/components/metrics/Metrics';
 import { ClusterScaleCard } from './ClusterScaleCard';
+import { ClusterHealthCard } from './ClusterHealthCard';
 import { ProvisioningJobsPanel } from './ProvisioningJobsPanel';
 
 type IconType = ComponentType<{ size?: number }>;
@@ -206,6 +207,8 @@ function OverviewTab({ cluster }: { cluster: Cluster }) {
           )}
         </div>
       </Card>
+
+      <ClusterHealthCard clusterId={cluster.id} />
 
       <div className="col-span-2 space-y-4">
         {getConnectionStatus(cluster) !== 'connected' && <InstallInstructions clusterId={cluster.id} />}
