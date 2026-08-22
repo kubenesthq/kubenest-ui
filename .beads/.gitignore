@@ -46,3 +46,7 @@ beads.right.meta.json
 # The JSONL files (issues.jsonl, interactions.jsonl) and config files
 # are tracked by git by default since no pattern above ignores them.
 *.lock
+*.db-fsqlite-*
+.write.lock
+.br-db-write-*.lock
+.br-jsonl-write-*.lock
