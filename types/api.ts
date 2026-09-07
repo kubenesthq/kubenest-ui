@@ -150,7 +150,8 @@ export interface CreateClusterRequest {
   instance_type?: string;
   agent_count?: number;
   disk_size_gb?: number;
-  // Component selection
+  // Retained for the provisioning wizard. Manual registration intentionally
+  // omits it: the current backend registration contract does not accept it.
   components?: ComponentsConfig;
 }
 

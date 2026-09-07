@@ -14,8 +14,6 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { createCluster } from '@/api/clusters';
 import { useCurrentOrg } from '@/hooks/useOrganization';
-import { ComponentSelector } from '@/components/clusters/ComponentSelector';
-import type { ComponentsConfig } from '@/types/api';
 import { useState } from 'react';
 
 const fadeInUp = {
@@ -49,11 +47,6 @@ export default function NewClusterPage() {
   const [created, setCreated] = useState(false);
   const [clusterName, setClusterName] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [components, setComponents] = useState<ComponentsConfig>({
-    storage: false, ha: false, build: false,
-    monitoring: { enabled: false },
-  });
-
   const {
     register,
     handleSubmit,
@@ -68,7 +61,6 @@ export default function NewClusterPage() {
       const cluster = await createCluster(orgId!, {
         name: data.name,
         description: data.description,
-        components,
       });
       setClusterName(data.name);
       setCreated(true);
@@ -96,7 +88,7 @@ export default function NewClusterPage() {
           </div>
           <h2 className="text-2xl font-bold text-zinc-900">Cluster Registered</h2>
           <p className="text-zinc-500">
-            <span className="font-mono text-zinc-700">{clusterName}</span> is connected and ready.
+            <span className="font-mono text-zinc-700">{clusterName}</span> is registered. Run the KubeNest CLI command on the next screen to connect its operator.
           </p>
         </motion.div>
       </div>
@@ -155,7 +147,7 @@ export default function NewClusterPage() {
             <div>
               <h3 className="text-sm font-semibold text-zinc-900">Connect Existing Cluster</h3>
               <p className="text-xs text-zinc-500 mt-1">
-                Register a cluster you already manage. Install the Kubenest operator via Helm.
+                Register a cluster you already manage, then connect its operator with the KubeNest CLI.
               </p>
             </div>
           </button>
@@ -202,11 +194,6 @@ export default function NewClusterPage() {
                 <div className="space-y-2">
                   <Label htmlFor="description">Description</Label>
                   <Input id="description" placeholder="Primary production cluster in US West region" {...register('description')} />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Platform Components <span className="text-xs text-zinc-400 font-normal">(optional)</span></Label>
-                  <ComponentSelector value={components} onChange={setComponents} />
                 </div>
 
                 <div className="flex justify-end gap-4">
