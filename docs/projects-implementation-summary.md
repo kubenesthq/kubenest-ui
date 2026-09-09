@@ -38,7 +38,6 @@ Successfully implemented comprehensive project management pages for the kubenest
 - Real-time namespace preview (auto-generated from project name)
 - Kubernetes namespace naming rules enforcement
 - Form validation using React Hook Form + Zod
-- Guardrails configuration section (placeholder for future)
 - Responsive design with mobile support
 
 **Validation Rules:**
@@ -271,9 +270,8 @@ types/
 2. Export project data
 3. Advanced filtering (by status, date range)
 4. Project templates
-5. Guardrails configuration implementation
-6. Activity logs and audit trail
-7. Project permissions and RBAC
+5. Activity logs and audit trail
+6. Project permissions and RBAC
 
 ## Technical Debt
 

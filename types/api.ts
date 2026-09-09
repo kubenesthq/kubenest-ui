@@ -164,7 +164,6 @@ export interface Project {
   display_name: string | null;
   description: string | null;
   registry_secret: string | null;
-  guardrails_config: Record<string, unknown> | null;
   status: string;
   created_at: string;
   updated_at: string | null;
@@ -176,7 +175,6 @@ export interface CreateProjectRequest {
   description?: string;
   display_name?: string;
   registry_secret?: string;
-  guardrails_config?: Record<string, unknown>;
 }
 
 // Ingress types
