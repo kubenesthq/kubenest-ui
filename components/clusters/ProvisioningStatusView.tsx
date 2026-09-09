@@ -212,7 +212,9 @@ export function ProvisioningStatusView({ clusterId }: { clusterId: string }) {
       job ? `provision job:    ${job.id} — ${job.status}${job.completed_at ? ` (completed ${job.completed_at})` : ''}` : 'provision job:    none',
       job?.error_message ? `provision error:  ${job.error_message}` : null,
       installQ.data?.hub_url ? `hub url:          ${installQ.data.hub_url}` : null,
-      installQ.data ? `connect with:     ${installQ.data.cli_command}` : null,
+      installQ.data?.cli_command
+        ? `connect with:     ${installQ.data.cli_command}`
+        : installQ.data ? 'manual connection: unavailable (no supported CLI command)' : null,
     ];
     return lines.filter((l): l is string => l != null).join('\n');
   }, [now, cluster, clusterId, job, installQ.data]);
@@ -312,12 +314,14 @@ export function ProvisioningStatusView({ clusterId }: { clusterId: string }) {
             {phase === 'operator_registering' && (
               <div className="space-y-2">
                 <p>Waiting for the KubeNest operator on the cluster to connect back over the websocket. The cluster will flip to <span className="font-medium">Connected</span> once it does.</p>
-                {installQ.data && (
+                {installQ.data?.cli_command ? (
                   <div className="space-y-1">
-                    <p className="text-xs text-zinc-400">If it&apos;s taking a while, you can re-run the operator install from a machine with kubectl access:</p>
+                    <p className="text-xs text-zinc-400">If it&apos;s taking a while, you can re-run the operator install:</p>
                     <pre className="bg-zinc-950 text-zinc-300 rounded-md p-3 text-[11px] font-mono whitespace-pre-wrap break-all">{installQ.data.cli_command}</pre>
                   </div>
-                )}
+                ) : installQ.data ? (
+                  <p className="text-xs text-zinc-400">There is no supported manual existing-cluster connection command. Do not run a <span className="font-mono">kubenest cluster connect</span> command; use the provisioning diagnostics if this install does not recover.</p>
+                ) : null}
               </div>
             )}
             {phase === 'cluster_ready' && <p>Done — the cluster is ready to host projects and apps.</p>}
@@ -336,11 +340,13 @@ export function ProvisioningStatusView({ clusterId }: { clusterId: string }) {
                 <p className="text-red-700 font-medium">The operator hasn&apos;t registered with KubeNest.</p>
                 <p className="text-zinc-600">The infrastructure is up, but the KubeNest operator running on the cluster hasn&apos;t phoned home. Common causes: the operator install didn&apos;t complete, the operator can&apos;t reach the hub, or the bootstrap token is invalid. <span className="font-medium">This is the only place we ask you to look at the operator.</span></p>
                 <div className="space-y-1">
-                  <p className="text-xs text-zinc-500">Re-run the operator install with the KubeNest CLI from a machine with kubectl access — this page picks it up automatically once the operator connects:</p>
+                  <p className="text-xs text-zinc-500">A manual existing-cluster connection command is available only when this page displays one:</p>
                   {installQ.isLoading ? (
                     <div className="flex items-center gap-2 text-xs text-zinc-400"><Loader2 className="h-3.5 w-3.5 animate-spin" /> fetching install instructions…</div>
+                  ) : installQ.data?.cli_command ? (
+                    <pre className="bg-zinc-950 text-zinc-300 rounded-md p-3 text-[11px] font-mono whitespace-pre-wrap break-all">{installQ.data.cli_command}</pre>
                   ) : (
-                    <pre className="bg-zinc-950 text-zinc-300 rounded-md p-3 text-[11px] font-mono whitespace-pre-wrap break-all">{installQ.data?.cli_command ?? `kubenest cluster connect --cluster ${clusterId}`}</pre>
+                    <p className="text-xs text-zinc-500">No supported manual connection command exists. Do not substitute <span className="font-mono">kubenest platform install</span>: it creates a new platform on bare hosts and does not attach this cluster record.</p>
                   )}
                 </div>
                 <div className="space-y-1">

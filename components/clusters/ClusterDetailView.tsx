@@ -61,8 +61,9 @@ function InstallInstructions({ clusterId }: { clusterId: string }) {
     queryFn: () => clustersApi.getInstallInstructions(clusterId),
   });
   const [copied, setCopied] = useState(false);
-  const cliCommand = q.data?.cli_command ?? `kubenest cluster connect --cluster ${clusterId}`;
+  const cliCommand = q.data?.cli_command;
   const copy = async () => {
+    if (!cliCommand) return;
     try {
       await navigator.clipboard.writeText(cliCommand);
       setCopied(true);
@@ -75,23 +76,35 @@ function InstallInstructions({ clusterId }: { clusterId: string }) {
     <Card>
       <div className="flex items-center gap-2 mb-2">
         <Terminal size={14} style={{ color: 'var(--text-3)' }} />
-        <span className="text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>Connect the operator</span>
+        <span className="text-[13.5px] font-semibold" style={{ color: 'var(--text)' }}>Connect an existing cluster</span>
       </div>
-      <p className="text-[12px] mb-2.5" style={{ color: 'var(--text-3)' }}>
-        Connect this cluster with the KubeNest CLI from a machine with <span className="font-mono">kubectl</span> access to it. The CLI signs in as you, obtains the cluster credentials directly, and installs the operator — no token ever appears in this console. The cluster shows <span className="font-medium" style={{ color: 'var(--text-2)' }}>Connected</span> once the operator is up.
-      </p>
-      <div className="relative">
-        <pre
-          className="rounded-md p-3 pr-10 text-[11.5px] font-mono whitespace-pre-wrap break-all"
-          style={{ background: 'var(--surface-3)', color: 'var(--text-2)' }}
-        >
-          {cliCommand}
-        </pre>
-        <button onClick={copy} title="Copy" className="absolute right-2 top-2 h-6 w-6 rounded inline-flex items-center justify-center hover:bg-[var(--surface-2)]" style={{ color: 'var(--text-3)' }}>
-          {copied ? <Check size={13} style={{ color: 'var(--ok)' }} /> : <Copy size={13} />}
-        </button>
-      </div>
-      {q.data && (
+      {!q.data ? (
+        <p className="text-[12px]" style={{ color: 'var(--text-3)' }}>Fetching connection status…</p>
+      ) : !cliCommand ? (
+        <div className="space-y-2 text-[12px]" style={{ color: 'var(--text-3)' }}>
+          <p>Existing-cluster connection is not available yet. KubeNest will not show a command that cannot run or install credentials in this console.</p>
+          <p><span className="font-mono">kubenest platform install</span> is for a new, bare Ubuntu-host platform install; it does not connect this cluster record.</p>
+          <a href={q.data.docs_url} target="_blank" rel="noreferrer" className="underline">Connection status and supported paths</a>
+        </div>
+      ) : (
+        <>
+          <p className="text-[12px] mb-2.5" style={{ color: 'var(--text-3)' }}>
+            Connect this cluster with the KubeNest CLI. The CLI obtains the cluster credentials directly and installs the operator — no token ever appears in this console. The cluster shows <span className="font-medium" style={{ color: 'var(--text-2)' }}>Connected</span> once the operator is up.
+          </p>
+          <div className="relative">
+            <pre
+              className="rounded-md p-3 pr-10 text-[11.5px] font-mono whitespace-pre-wrap break-all"
+              style={{ background: 'var(--surface-3)', color: 'var(--text-2)' }}
+            >
+              {cliCommand}
+            </pre>
+            <button onClick={copy} title="Copy" className="absolute right-2 top-2 h-6 w-6 rounded inline-flex items-center justify-center hover:bg-[var(--surface-2)]" style={{ color: 'var(--text-3)' }}>
+              {copied ? <Check size={13} style={{ color: 'var(--ok)' }} /> : <Copy size={13} />}
+            </button>
+          </div>
+        </>
+      )}
+      {q.data && cliCommand && (
         <p className="text-[11px] mt-2" style={{ color: 'var(--text-4)' }}>
           Installs into <span className="font-mono">{q.data.namespace}</span>
           {q.data.chart_ref ? <> from <span className="font-mono">{q.data.chart_ref}</span></> : null}.{' '}

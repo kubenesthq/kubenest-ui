@@ -6,7 +6,7 @@ import { artifact } from './fixtures';
  * against the REAL backend via the shared auth state from the `setup` project —
  * no mocks, no page.route() stubs.
  */
-test('clusters: list + detail render real status / secret-free CLI pointer / provisioning, with labelled stubs', async ({ page }) => {
+test('clusters: list + detail render real status / secret-free connection state / provisioning, with labelled stubs', async ({ page }) => {
   const legacyInstallCommandResponses: string[] = [];
   page.on('response', (response) => {
     if (response.url().includes('/install-command')) legacyInstallCommandResponses.push(response.url());
@@ -18,8 +18,8 @@ test('clusters: list + detail render real status / secret-free CLI pointer / pro
   await expect(page.getByRole('heading', { name: 'Clusters' })).toBeVisible();
 
   // The environment has a real connected cluster. Verify it is listed, then
-  // register a separate manual cluster through the UI: only a pending cluster
-  // renders the safe reconnect pointer.
+  // register a separate manual cluster through the UI: the response must not
+  // invent a CLI remedy before existing-cluster connection is implemented.
   const firstClusterLink = page.locator('a[href^="/clusters/"]:not([href="/clusters/new"]):not([href^="/clusters/new/"])').first();
   await expect(firstClusterLink).toBeVisible({ timeout: 12_000 });
   await page.goto('/clusters/new');
@@ -45,7 +45,7 @@ test('clusters: list + detail render real status / secret-free CLI pointer / pro
   await page.waitForURL(/\/clusters\/(?!new(?:\/|$))[^/]+$/, { timeout: 10_000 });
   await page.waitForLoadState('domcontentloaded');
 
-  // ── Detail — Overview (default tab): real status + CLI pointer ───────────
+  // ── Detail — Overview (default tab): real status + connection state ──────
   // Status grid labels.
   await expect(page.getByText('Connection', { exact: true })).toBeVisible();
   await expect(page.getByText('Health', { exact: true })).toBeVisible();
@@ -53,11 +53,10 @@ test('clusters: list + detail render real status / secret-free CLI pointer / pro
   // The hero shows a connection pill — Connected / Pending / Disconnected.
   await expect(page.getByText(/^(Connected|Pending|Disconnected)$/).first()).toBeVisible();
 
-  // Install instructions are the only browser-facing install surface. They
-  // contain a CLI pointer, never the agent JWT or GitOps deploy key.
-  await expect(page.getByText('Connect the operator')).toBeVisible();
-  const installPre = page.locator('pre').first();
-  await expect(installPre).toBeVisible({ timeout: 12_000 });
+  // Install instructions are browser-safe and must not invent an unimplemented
+  // CLI pointer. They never contain the agent JWT or GitOps deploy key.
+  await expect(page.getByText('Connect an existing cluster')).toBeVisible();
+  await expect(page.getByText('Existing-cluster connection is not available yet.')).toBeVisible({ timeout: 12_000 });
   const installInstructionsResponse = await installInstructionsResponsePromise;
   expect(installInstructionsResponse.status()).toBe(200);
   const instructions = await installInstructionsResponse.json() as Record<string, unknown>;
@@ -71,8 +70,8 @@ test('clusters: list + detail render real status / secret-free CLI pointer / pro
   ]);
   const clusterId = new URL(page.url()).pathname.split('/').at(-1);
   expect(instructions.cluster_id).toBe(clusterId);
-  expect(instructions.cli_command).toBe(`kubenest cluster connect --cluster ${clusterId}`);
-  await expect(installPre).toHaveText(`kubenest cluster connect --cluster ${clusterId}`);
+  expect(instructions.cli_command).toBeNull();
+  await expect(page.getByText(`kubenest cluster connect --cluster ${clusterId}`)).toHaveCount(0);
   expect(legacyInstallCommandResponses).toEqual([]);
 
   // This manual registration is intentionally pending, so it has no capacity

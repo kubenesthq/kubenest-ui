@@ -127,13 +127,13 @@ export interface ClusterHealth {
 // kn-rnyl phase A: create responses are credential-free. The console shows the
 // CLI pointer; credentials are minted only by POST agent-credentials (CLI-side).
 export interface ClusterCreateResponse extends Cluster {
-  cli_command: string;
+  cli_command: string | null;
 }
 
 // Secret-free install surface (contract v1.12.0) — everything the UI may render.
 export interface InstallInstructions {
   cluster_id: string;
-  cli_command: string;
+  cli_command: string | null;
   hub_url?: string | null;
   namespace: string;
   chart_ref?: string | null;
