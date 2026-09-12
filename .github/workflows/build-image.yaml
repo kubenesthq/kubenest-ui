@@ -61,6 +61,18 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          # THE FULL FORTY-CHARACTER SHA, NOT steps.tag.outputs.tag (kn-xl9u).
+          # The tag is GITHUB_SHA::7, and a seven-character sha is a reference no
+          # registry will resolve and no `git merge-base --is-ancestor` will
+          # accept. The point of this label is that a reader can take the value
+          # off the artifact and run ancestry against it — the difference between
+          # a label merge-base can use and one that merely looks like provenance.
+          #
+          # Same key and same source as kubenest-hub (094b95e) and
+          # kubenest-backend, so one delivery check reads all three rather than
+          # three.
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
           platforms: linux/amd64
           cache-from: type=gha
           cache-to: type=gha,mode=max
