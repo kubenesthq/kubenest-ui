@@ -53,7 +53,21 @@ export interface OrganizationCreate {
 }
 
 // Cluster types
-export type ClusterStatus = 'pending' | 'provisioning' | 'connected' | 'disconnected' | 'error';
+// kn-ui-renders-lifecycle-states-as-disconnected-x8yi: ALL NINE BACKEND VALUES.
+// This union carried five. The four it omitted — awaiting_operator, installing,
+// install_failed, destroying — are states app/models/cluster.py really sends, so
+// TypeScript did not know they existed and every consumer bucketed them by
+// accident rather than by choice.
+export type ClusterStatus =
+  | 'pending'
+  | 'provisioning'
+  | 'awaiting_operator'
+  | 'installing'
+  | 'install_failed'
+  | 'connected'
+  | 'disconnected'
+  | 'destroying'
+  | 'error';
 
 export interface MonitoringConfig {
   enabled: boolean;
@@ -689,15 +703,48 @@ export type ProjectCreateRequest = CreateProjectRequest;
 export type ConnectionStatus = 'connected' | 'disconnected' | 'pending';
 
 // Helper to determine connection status from cluster data
-export function getConnectionStatus(cluster: Cluster): ConnectionStatus {
+/**
+ * Map a cluster's lifecycle state onto the three-way connection badge.
+ *
+ * EXHAUSTIVE BY CONSTRUCTION (kn-ui-renders-lifecycle-states-as-disconnected-x8yi).
+ * There is no `default` branch, so adding a tenth ClusterStatus value FAILS THE
+ * BUILD at the `never` assignment below instead of silently falling into a
+ * bucket. The previous version ended in `case 'pending': default:` — which meant
+ * installing, install_failed, awaiting_operator and destroying all reported
+ * 'pending', a confident wrong answer nobody chose.
+ *
+ * THE THREE-WAY COLLAPSE IS STILL A COLLAPSE, and it is deliberate here rather
+ * than accidental: the badge has three presentations, so nine states must land
+ * on three. What changed is that each of the nine is now assigned on purpose and
+ * a new one cannot be assigned by omission.
+ *
+ * TAKES THE MINIMAL SHAPE rather than a full Cluster: it reads only `.status`,
+ * and demand for it came from ClusterList, which renders a DemoCluster. A
+ * narrower parameter would have pushed that caller back to its own inline
+ * ternary, which is the defect being removed.
+ */
+export function getConnectionStatus(cluster: { status: ClusterStatus }): ConnectionStatus {
   switch (cluster.status) {
     case 'connected':
       return 'connected';
+    // Terminal-bad and gone. These are the only states where "disconnected" is
+    // an honest word for what the cluster is.
     case 'disconnected':
     case 'error':
+    case 'install_failed':
       return 'disconnected';
+    // In flight. A cluster being built, adopted or torn down is not down — it is
+    // mid-transition, and calling it disconnected sends an operator looking for
+    // a fault that does not exist.
     case 'pending':
-    default:
+    case 'provisioning':
+    case 'awaiting_operator':
+    case 'installing':
+    case 'destroying':
       return 'pending';
   }
+  // Unreachable while the switch is exhaustive. If a ClusterStatus value is
+  // added and not handled above, this line stops compiling — which is the guard.
+  const unhandled: never = cluster.status;
+  return unhandled;
 }

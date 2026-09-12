@@ -88,7 +88,13 @@ export function ClusterList() {
               <TableCell><span className="font-medium">{cluster.name}</span></TableCell>
               <TableCell className="text-muted-foreground">{cluster.description || '-'}</TableCell>
               <TableCell><span className="capitalize">{cluster.status}</span></TableCell>
-              <TableCell><ClusterStatusBadge status={cluster.status === 'connected' ? 'connected' : cluster.status === 'pending' ? 'pending' : 'disconnected'} /></TableCell>
+              {/* kn-ui-renders-lifecycle-states-as-disconnected-x8yi: use the ONE shared
+                  mapping. This was an inline ternary whose else-branch was 'disconnected',
+                  so six of the backend's nine states — provisioning, awaiting_operator,
+                  installing, install_failed, destroying, error — rendered as a red
+                  "Disconnected" badge. getConnectionStatus is exhaustive and cannot
+                  bucket a state by omission. */}
+              <TableCell><ClusterStatusBadge status={getConnectionStatus(cluster)} /></TableCell>
               <TableCell>{cluster.node_count || 0}</TableCell>
               <TableCell className="text-muted-foreground">{cluster.kubernetes_version || '-'}</TableCell>
             </MotionTableRow>
